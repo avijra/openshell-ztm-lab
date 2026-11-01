@@ -38,52 +38,37 @@ graph TB
 
 Vault stores the DeepSeek API key. The Helm chart's pre-install hook seeds it automatically.
 
-### Verify the Secret in Vault
+### Verify the Secret Reached Vault
 
-From the bastion:
+The Helm chart stores the API key in Vault at path `hub/infra/openshell/deepseek`. You can confirm Vault is running:
 
 ```bash
-export VAULT_ADDR=https://vault.<CLUSTER_DOMAIN>
-export VAULT_SKIP_VERIFY=true
-
-VAULT_TOKEN=$(oc get secret vault-init -n vault -o jsonpath='{.data.root_token}' | base64 -d)
-export VAULT_TOKEN
-
-vault kv get secret/openshell/deepseek-api-key
+oc get pods -n vault -l app.kubernetes.io/name=vault
 ```
 
-**Why:** This confirms the Helm chart's pre-install hook successfully stored the API key in Vault. The `vault kv get` command reads from Vault's KV v2 engine.
-
-Expected output (key is redacted):
+Expected:
 
 ```
-====== Data ======
-Key           Value
----           -----
-api_key       sk-****...
+NAME      READY   STATUS    RESTARTS   AGE
+vault-0   1/1     Running   0          ...
 ```
+
+You can also verify the ESO-synced K8s Secret exists (which proves Vault has the key):
+
+```bash
+oc get secret deepseek-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
+echo "..."
+```
+
+This should print the first 10 characters of your DeepSeek key, confirming the Vault → ESO → K8s Secret chain works.
 
 ### The Vault Path
 
 | Path | Purpose |
 |------|---------|
-| `secret/data/openshell/deepseek-api-key` | DeepSeek API key for the sandbox |
+| `hub/infra/openshell/deepseek` | DeepSeek API key (`api_key` field) |
 
-The Vault auth method is Kubernetes auth mounted at path `hub/`. The vault-seed Job authenticates using its ServiceAccount token.
-
-### How the Vault Seed Job Authenticates
-
-```mermaid
-graph TD
-    J["Vault Seed Job<br/>(runs as pre-install hook)"]
-    SA["Reads its ServiceAccount<br/>JWT token from K8s"]
-    AUTH["POST /v1/auth/hub/login<br/>role=vault-seed-job"]
-    VER["Vault calls K8s TokenReview<br/>to verify the JWT"]
-    TOK["Vault issues a client token<br/>(scoped to write secrets)"]
-    WRITE["Job writes API key to<br/>secret/openshell/deepseek-api-key"]
-
-    J --> SA --> AUTH --> VER --> TOK --> WRITE
-```
+The Vault auth method is Kubernetes auth mounted at path `hub/`. The Helm chart's setup job authenticates using its ServiceAccount token to write the key.
 
 ## Pillar 2: External Secrets Operator — Secret Sync
 
@@ -98,8 +83,8 @@ oc get externalsecrets -n openshell-system
 Expected:
 
 ```
-NAME                  STORE          REFRESH   STATUS
-deepseek-api-key      vault-backend  1h        SecretSynced
+NAME                  STORETYPE            STORE           REFRESH INTERVAL   STATUS         READY
+deepseek-api-key-es   ClusterSecretStore   vault-backend   1h                 SecretSynced   True
 ```
 
 ### Verify the K8s Secret
@@ -132,16 +117,22 @@ SPIFFE (Secure Production Identity Framework for Everyone) provides cryptographi
 ### Verify the SPIFFE Registration
 
 ```bash
-oc get clusterspiffeids -l app=openshell
+oc get clusterspiffeids | grep openshell
 ```
 
-**Why:** `ClusterSPIFFEID` resources tell SPIRE which SPIFFE IDs to issue to which pods.
+Expected:
+
+```
+openshell-gateway   ...
+```
+
+**Why:** `ClusterSPIFFEID` resources tell SPIRE which SPIFFE IDs to issue to which pods. SPIRE runs in the `zero-trust-workload-identity-manager` namespace.
 
 ### What SPIFFE Provides
 
 | Property | Value |
 |----------|-------|
-| Identity format | `spiffe://cluster.local/ns/openshell-system/sa/openshell-gateway` |
+| Identity format | `spiffe://cluster.local/ns/openshell-system/sa/openshell-ztm-demo` |
 | Certificate type | X.509 SVID |
 | Rotation | Automatic (SPIRE agent handles renewal) |
 | Trust domain | `cluster.local` |

@@ -117,35 +117,41 @@ Watch the pods come up from the bastion:
 oc get pods -n openshell-system -w
 ```
 
-Wait until you see all pods in `Running` state and the hook jobs in `Completed`:
+Wait until you see all pods in `Running` state and the setup job in `Completed`:
 
 ```
-NAME                                   READY   STATUS      RESTARTS   AGE
-openshell-gateway-xxxxx-xxxxx          1/1     Running     0          2m
-openshell-supervisor-0                 1/1     Running     0          2m
-pi-agent-demo                          1/1     Running     0          1m
-sandbox-create-job-xxxxx               0/1     Completed   0          1m
-vault-seed-deepseek-1-xxxxx            0/1     Completed   0          2m
+NAME                                                 READY   STATUS      RESTARTS   AGE
+default--pi-agent-demo                               1/1     Running     0          1m
+openshell-ztm-demo-0                                 1/1     Running     0          1m
+os-supervisor-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   1/1     Running     0          1m
+pi-sandbox-setup-1-xxxxx                             0/1     Completed   0          1m
 ```
 
 Press `Ctrl+C` to stop watching.
 
+| Pod | Role |
+|-----|------|
+| `openshell-ztm-demo-0` | Gateway (StatefulSet) — gRPC API, policy engine |
+| `os-supervisor-*` | Supervisor — boundary enforcement |
+| `default--pi-agent-demo` | Sandbox — where Pi runs |
+| `pi-sandbox-setup-1-*` | Setup Job — creates sandbox, imports provider |
+
 ## Step 5 — Verify the Sandbox
 
-Confirm the sandbox is ready:
+Confirm the sandbox pod is running:
 
 ```bash
-oc get agentsandboxes -n openshell-system
+oc get pods -n openshell-system -l sandbox=pi-agent-demo
 ```
 
 Expected output:
 
 ```
-NAME              READY   AGE
-pi-agent-demo     True    2m
+NAME                     READY   STATUS    RESTARTS   AGE
+default--pi-agent-demo   1/1     Running   0          2m
 ```
 
-**Why:** The `AgentSandbox` is a Kubernetes Custom Resource (CR) managed by OpenShell. The `READY=True` status means the Gateway has provisioned the sandbox pod, the Supervisor is connected, and the zero-trust policy is enforced.
+**Why:** The sandbox runs as a regular pod managed by the OpenShell Gateway. The `Running` status means the Gateway has provisioned the sandbox, the Supervisor is connected, and the zero-trust policy is enforced.
 
 ## What Just Happened
 

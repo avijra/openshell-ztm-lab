@@ -25,7 +25,7 @@ The ZTVP provides these components, which are already running:
 | HashiCorp Vault | ✅ Deployed | `https://vault.<CLUSTER_DOMAIN>` |
 | External Secrets Operator | ✅ Deployed | namespace `external-secrets-operator` |
 | Keycloak | ✅ Deployed | `https://keycloak.<CLUSTER_DOMAIN>` |
-| SPIFFE/SPIRE | ✅ Deployed | namespace `spire-server` |
+| SPIFFE/SPIRE | ✅ Deployed | namespace `zero-trust-workload-identity-manager` |
 | ACS (StackRox) | ✅ Deployed | `https://central-stackrox.<CLUSTER_DOMAIN>` |
 
 > You do not need to deploy or configure any ZTVP components. The pattern is already running.

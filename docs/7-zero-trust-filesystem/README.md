@@ -4,47 +4,35 @@ In this module you will prove that the sandbox has **limited filesystem access**
 
 ## The Filesystem Policy
 
-The Helm chart deploys a Landlock filesystem policy:
+The actual policy from the cluster:
 
 ```yaml
-filesystem:
+filesystem_policy:
+  include_workdir: true
   read_only:
+    - /bin
     - /usr
     - /lib
-    - /etc/ssl
-    - /etc/resolv.conf
+    - /proc
+    - /dev/urandom
+    - /app
+    - /etc
+    - /var/log
   read_write:
-    - /home/sandbox
+    - /sandbox
     - /tmp
-    - /workspace
+    - /dev/null
 ```
 
 | Path | Access | Why |
 |------|--------|-----|
-| `/usr`, `/lib` | Read-only | System binaries and libraries (node, python, curl) |
-| `/etc/ssl` | Read-only | TLS certificates for HTTPS connections |
-| `/etc/resolv.conf` | Read-only | DNS configuration |
-| `/home/sandbox` | Read + Write | Agent's home directory — where Pi writes code |
-| `/tmp` | Read + Write | Temporary files for builds, npm cache |
-| `/workspace` | Read + Write | Working directory for projects |
+| `/bin`, `/usr`, `/lib` | Read-only | System binaries and libraries |
+| `/etc` | Read-only | Configuration files, TLS certs |
+| `/proc` | Read-only | Process information |
+| `/sandbox` | Read + Write | Agent's working directory (HOME) |
+| `/tmp` | Read + Write | Temporary files, npm cache |
 
-Everything else — `/etc/passwd`, `/var`, `/root`, `/proc/1`, Kubernetes service account tokens — is **denied**.
-
-## How Landlock LSM Works
-
-```mermaid
-flowchart TD
-    P["Sandbox Process<br/>open('/some/path')"] --> LL{"Landlock LSM<br/>(Kernel)"}
-    LL -->|"path in read_only list?"| RO["✅ Read allowed<br/>❌ Write denied"]
-    LL -->|"path in read_write list?"| RW["✅ Read + Write allowed"]
-    LL -->|"path NOT in any list?"| DENY["❌ EACCES<br/>Permission Denied"]
-    
-    style RO fill:#fffbeb,color:#92400e
-    style RW fill:#c6f6d5,color:#22543d
-    style DENY fill:#fed7d7,color:#742a2a
-```
-
-**Landlock** is a Linux Security Module (LSM) that allows unprivileged processes to restrict their own filesystem access. Unlike AppArmor or SELinux, it does not require a privileged daemon. OpenShell configures Landlock rules when the sandbox starts, and the kernel enforces them — the process inside cannot remove or weaken these rules.
+Everything outside these lists — including `/home`, `/root`, `/var/run`, and the root directory `/` itself — is **inaccessible**.
 
 ## Step 1 — Enter the Sandbox
 
@@ -52,11 +40,11 @@ flowchart TD
 openshell sandbox exec pi-agent-demo -- bash
 ```
 
-## Step 2 — Test ALLOWED: Write to Home
+## Step 2 — Test ALLOWED: Write to /sandbox
 
 ```bash
-echo "This is allowed" > /home/sandbox/test.txt
-cat /home/sandbox/test.txt
+echo "This is allowed" > /sandbox/test.txt
+cat /sandbox/test.txt
 ```
 
 Expected:
@@ -65,7 +53,7 @@ Expected:
 This is allowed
 ```
 
-✅ **Allowed** — `/home/sandbox` is in the `read_write` list.
+✅ **Allowed** — `/sandbox` is the agent's working directory and is in the `read_write` list.
 
 ## Step 3 — Test ALLOWED: Write to /tmp
 
@@ -96,7 +84,17 @@ Expected:
 
 ✅ **Allowed** — `/usr` is in the `read_only` list. The agent can execute programs but cannot modify them.
 
-## Step 5 — Test DENIED: Write to /etc
+## Step 5 — Test ALLOWED: Read /etc (read-only)
+
+```bash
+cat /etc/hostname
+```
+
+Expected: the container hostname is printed.
+
+✅ **Allowed** — `/etc` is in the `read_only` list. The agent can read configuration files and TLS certificates.
+
+## Step 6 — Test DENIED: Write to /etc
 
 ```bash
 echo "hacked" > /etc/test 2>&1
@@ -108,39 +106,9 @@ Expected:
 bash: /etc/test: Permission denied
 ```
 
-❌ **Denied** — `/etc` is not in the `read_write` list. Even though `/etc/ssl` and `/etc/resolv.conf` are readable, the agent cannot write to them.
+❌ **Denied** — `/etc` is read-only. The agent can read but not modify system configuration.
 
-## Step 6 — Test DENIED: Read /etc/passwd
-
-```bash
-cat /etc/passwd 2>&1
-```
-
-Expected:
-
-```
-cat: /etc/passwd: Permission denied
-```
-
-❌ **Denied** — `/etc/passwd` is not in the `read_only` list. Only `/etc/ssl` and `/etc/resolv.conf` are explicitly allowed.
-
-## Step 7 — Test DENIED: Access Kubernetes Service Account
-
-In a standard Kubernetes pod, every container has a service account token at `/var/run/secrets/kubernetes.io/serviceaccount/token`. An AI agent with access to this token could authenticate to the Kubernetes API and potentially escalate privileges.
-
-```bash
-cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>&1
-```
-
-Expected:
-
-```
-cat: /var/run/secrets/kubernetes.io/serviceaccount/token: Permission denied
-```
-
-❌ **Denied** — `/var` is not in any allowlist. The agent cannot read Kubernetes secrets.
-
-## Step 8 — Test DENIED: Write to /usr (Tamper with Binaries)
+## Step 7 — Test DENIED: Overwrite a Binary
 
 ```bash
 cp /dev/null /usr/bin/node 2>&1
@@ -154,7 +122,49 @@ cp: cannot create regular file '/usr/bin/node': Permission denied
 
 ❌ **Denied** — `/usr` is read-only. The agent can run Node.js but cannot replace it with a malicious binary.
 
-## Step 9 — Exit the Sandbox
+## Step 8 — Test DENIED: List Root Directory
+
+```bash
+ls / 2>&1
+```
+
+Expected:
+
+```
+ls: cannot open directory '/': Permission denied
+```
+
+❌ **Denied** — the root directory `/` is not in any allowlist. The agent cannot even enumerate what exists on the filesystem.
+
+## Step 9 — Test DENIED: Create /home/sandbox
+
+```bash
+mkdir -p /home/sandbox 2>&1
+```
+
+Expected:
+
+```
+mkdir: cannot create directory '/home/sandbox': Permission denied
+```
+
+❌ **Denied** — `/home` is not in any allowlist. The working directory is `/sandbox`, not `/home/sandbox`.
+
+## Step 10 — Test: Kubernetes Service Account Token
+
+```bash
+cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>&1
+```
+
+Expected:
+
+```
+cat: /var/run/secrets/kubernetes.io/serviceaccount/token: No such file or directory
+```
+
+❌ **Not accessible** — the token path does not exist inside the sandbox. OpenShell does not mount Kubernetes service account tokens into sandbox containers, preventing the agent from authenticating to the Kubernetes API.
+
+## Step 11 — Exit the Sandbox
 
 ```bash
 exit
@@ -164,29 +174,31 @@ exit
 
 | Test | Path | Operation | Expected | Policy |
 |------|------|-----------|----------|--------|
-| Write home | `/home/sandbox/test.txt` | Write | Success | ✅ read_write |
-| Write tmp | `/tmp/test.txt` | Write | Success | ✅ read_write |
+| Write /sandbox | `/sandbox/test.txt` | Write | Success | ✅ read_write |
+| Write /tmp | `/tmp/test.txt` | Write | Success | ✅ read_write |
 | Read binaries | `/usr/bin/node` | Read | Success | ✅ read_only |
-| Write /etc | `/etc/test` | Write | Permission denied | ❌ Denied |
-| Read passwd | `/etc/passwd` | Read | Permission denied | ❌ Denied |
-| Read K8s token | `/var/run/secrets/...` | Read | Permission denied | ❌ Denied |
+| Read /etc | `/etc/hostname` | Read | Success | ✅ read_only |
+| Write /etc | `/etc/test` | Write | Permission denied | ❌ read_only |
 | Overwrite binary | `/usr/bin/node` | Write | Permission denied | ❌ read_only |
+| List root | `/` | Read | Permission denied | ❌ Not listed |
+| Create /home | `/home/sandbox` | Write | Permission denied | ❌ Not listed |
+| K8s SA token | `/var/run/secrets/...` | Read | No such file | ❌ Not mounted |
 
 ## Why This Matters
 
 Without filesystem restrictions, an AI agent could:
 
-- **Read `/etc/passwd`** to enumerate users
-- **Read K8s service account tokens** to access the cluster API
+- **Read system configuration** and modify it
 - **Modify system binaries** to install backdoors
-- **Write to `/etc/cron.d`** to establish persistence
-- **Access `/proc`** to inspect other processes
+- **Access Kubernetes secrets** via service account tokens
+- **Write to cron directories** to establish persistence
+- **Enumerate the filesystem** to discover attack surfaces
 
 With Landlock LSM:
 
-- The agent can only work in its designated directories
-- System files are either read-only or completely inaccessible
-- Kubernetes secrets are invisible
+- The agent can only work in `/sandbox` and `/tmp`
+- System files are read-only or completely inaccessible
+- Kubernetes secrets are not mounted
 - The kernel enforces this — no userspace bypass possible
 
 ## Next Step

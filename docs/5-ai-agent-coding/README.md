@@ -24,13 +24,7 @@ openshell sandbox exec pi-agent-demo -- bash
 
 **Why:** `sandbox exec` runs a command inside the sandbox container, similar to `kubectl exec`. The `--` separates OpenShell flags from the command to run. You are now inside the sandboxed environment.
 
-You should see a shell prompt:
-
-```
-sandbox@pi-agent-demo:~$
-```
-
-Verify Pi is available:
+You should see a prompt inside the sandbox. Verify Pi is available:
 
 ```bash
 pi --version
@@ -39,7 +33,7 @@ pi --version
 Expected:
 
 ```
-pi 1.4.0
+1.4.0
 ```
 
 ## Step 2 — Simple Prompt: Hello World
@@ -118,22 +112,21 @@ Every outbound network request was checked by the boundary:
 | npm install | `registry.npmjs.org` | ✅ Explicitly allowed | Forwarded |
 | localhost test | `127.0.0.1:3000` | ✅ Local (no boundary) | Direct |
 
-## Step 4 — Verify Provider Configuration
+## Step 4 — Verify DeepSeek Credential Is Available
 
-While still inside the sandbox, check the configured providers:
+While still inside the sandbox, check that the DeepSeek API key environment variable is set:
 
 ```bash
-pi provider list
+echo $DEEPSEEK_API_KEY | head -c 30
 ```
 
-Expected:
+Expected (a resolver token, not the real key):
 
 ```
-NAME       MODEL
-deepseek   deepseek-chat
+openshell:resolve:env:v...
 ```
 
-**Why:** This confirms Pi knows about the DeepSeek provider and which model to use. The provider was configured by the Helm chart's post-install hook.
+**Why:** This confirms the DeepSeek credential was injected into the sandbox by the Helm chart's post-install hook. Pi automatically uses `$DEEPSEEK_API_KEY` when calling the DeepSeek provider.
 
 ## Step 5 — Exit the Sandbox
 

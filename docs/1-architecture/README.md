@@ -124,6 +124,6 @@ graph TD
 | **Sandbox** | Isolated container running Pi agent | `openshell-system` |
 | **Vault** | Stores API keys, issues dynamic secrets | `vault` |
 | **ESO** | Syncs Vault secrets → K8s Secrets | `external-secrets-operator` |
-| **SPIFFE/SPIRE** | Issues cryptographic workload identities (SVIDs) | `spire-server` |
+| **SPIFFE/SPIRE** | Issues cryptographic workload identities (SVIDs) | `zero-trust-workload-identity-manager` |
 | **ACS** | Scans container images for CVEs, enforces policies | `stackrox` |
 | **Keycloak** | SSO / OIDC identity provider | `keycloak-system` |

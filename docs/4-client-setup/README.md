@@ -12,47 +12,43 @@ The OpenShell Gateway is exposed via an OpenShift Route inside the cluster. The 
 ssh rosa@<BASTION_HOST>
 ```
 
-## Step 2 — Download the OpenShell CLI
+## Step 2 — Check the OpenShell CLI
 
-The OpenShell CLI is a single static binary. Download it from NVIDIA's CDN:
-
-```bash
-curl -fsSL https://openshell-cli.s3.amazonaws.com/v0.1.6/openshell-linux-amd64 -o /usr/local/bin/openshell
-chmod +x /usr/local/bin/openshell
-```
-
-**Why:** The CLI is the primary interface for interacting with sandboxes. It communicates with the Gateway over gRPC. Version 0.1.6 matches the chart's bundled server version.
-
-Verify the installation:
+The OpenShell CLI should already be installed by the lab provisioning. Verify:
 
 ```bash
-openshell version
+openshell --version
 ```
 
 Expected output:
 
 ```
-openshell v0.1.6
+openshell 0.1.6
 ```
+
+> If `openshell` is not found, download it:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+> ```
 
 ## Step 3 — Configure the Gateway Endpoint
 
-The CLI needs to know the Gateway's address. Get the Route hostname:
+The CLI needs to know the Gateway's address. Get the Route hostname and set it with the `https://` prefix:
 
 ```bash
-export OPENSHELL_GATEWAY_ENDPOINT=$(oc get route openshell-gateway -n openshell-system -o jsonpath='{.spec.host}')
+export OPENSHELL_GATEWAY_ENDPOINT=https://$(oc get route openshell-ztm-demo -n openshell-system -o jsonpath='{.spec.host}')
 echo "Gateway: $OPENSHELL_GATEWAY_ENDPOINT"
 ```
 
 Expected output:
 
 ```
-Gateway: openshell-gateway-openshell-system.apps.rosa.rosa-wjw4q.8pwg.p3.openshiftapps.com
+Gateway: https://openshell-ztm-demo-openshell-system.apps.rosa.rosa-wjw4q.8pwg.p3.openshiftapps.com
 ```
 
-**Why:** `OPENSHELL_GATEWAY_ENDPOINT` tells the CLI where to send gRPC requests. Without this, the CLI has no server to connect to.
+**Why:** `OPENSHELL_GATEWAY_ENDPOINT` tells the CLI where to send gRPC requests. The `https://` prefix is required — the CLI rejects bare hostnames.
 
-Since the OpenShift Route uses a self-signed TLS certificate (not publicly trusted), set the insecure flag:
+Since the OpenShift Route uses a cluster-internal CA certificate, set the insecure flag:
 
 ```bash
 export OPENSHELL_GATEWAY_INSECURE=true
@@ -71,17 +67,17 @@ openshell sandbox list
 Expected output:
 
 ```
-NAME              READY   PROVIDERS
-pi-agent-demo     true    deepseek
+NAME           CREATED              PHASE
+pi-agent-demo  2026-xx-xx xx:xx:xx  Ready
 ```
 
 **What this tells you:**
 
 | Field | Meaning |
 |-------|---------|
-| `NAME` | The sandbox identifier — this is the container running Pi |
-| `READY` | `true` means the sandbox pod is running and the supervisor is connected |
-| `PROVIDERS` | `deepseek` means the DeepSeek LLM provider is configured and the credential is available |
+| `NAME` | The sandbox identifier — the container running Pi |
+| `CREATED` | When the sandbox was created |
+| `PHASE` | `Ready` means the pod is running and the supervisor is connected |
 
 ## Step 5 — Make the Config Persistent
 
@@ -91,7 +87,7 @@ Add the environment variables to your shell profile so they survive new sessions
 cat >> ~/.bashrc <<'EOF'
 
 # OpenShell CLI configuration
-export OPENSHELL_GATEWAY_ENDPOINT=$(oc get route openshell-gateway -n openshell-system -o jsonpath='{.spec.host}')
+export OPENSHELL_GATEWAY_ENDPOINT=https://$(oc get route openshell-ztm-demo -n openshell-system -o jsonpath='{.spec.host}')
 export OPENSHELL_GATEWAY_INSECURE=true
 EOF
 
@@ -124,7 +120,7 @@ graph TD
 Set these two environment variables on any machine with network access to the cluster:
 
 ```bash
-export OPENSHELL_GATEWAY_ENDPOINT=openshell-gateway-openshell-system.<CLUSTER_DOMAIN>
+export OPENSHELL_GATEWAY_ENDPOINT=https://openshell-ztm-demo-openshell-system.<CLUSTER_DOMAIN>
 export OPENSHELL_GATEWAY_INSECURE=true
 ```
 

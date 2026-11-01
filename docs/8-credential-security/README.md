@@ -59,10 +59,10 @@ echo $DEEPSEEK_API_KEY
 Expected output (the exact token varies):
 
 ```
-openshell:resolve:env:v1:deepseek:api_key:a1b2c3d4e5f6
+openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY
 ```
 
-✅ This is a **resolver token**, not the real key. It starts with `openshell:resolve:env:v1:` followed by the provider name and a random identifier.
+✅ This is a **resolver token**, not the real key. It starts with `openshell:resolve:env:` followed by an internal identifier. The real `sk-...` key is nowhere in the sandbox environment.
 
 ## Step 3 — Try to Extract the Key
 
@@ -75,7 +75,7 @@ env | grep -i deepseek
 Expected:
 
 ```
-DEEPSEEK_API_KEY=openshell:resolve:env:v1:deepseek:api_key:a1b2c3d4e5f6
+DEEPSEEK_API_KEY=openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY
 ```
 
 The resolver token is all that exists in the sandbox's environment. There is no second copy of the real key anywhere inside the container.
