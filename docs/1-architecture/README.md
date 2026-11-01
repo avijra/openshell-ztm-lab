@@ -8,113 +8,111 @@ The demo runs on a ROSA cluster with the Zero Trust Validated Pattern (ZTVP) as 
 graph TB
     subgraph ROSA["ROSA Cluster (AWS)"]
         subgraph ZTVP["Zero Trust Validated Pattern"]
-            Vault["🔐 HashiCorp Vault<br/>Secret Management"]
-            ESO["🔄 External Secrets Operator<br/>Secret Sync"]
-            Keycloak["🔑 Keycloak<br/>Identity & SSO"]
-            SPIRE["🪪 SPIFFE/SPIRE<br/>Workload Identity"]
-            ACS["🛡️ Red Hat ACS<br/>Image Scanning"]
+            Vault["🔐 Vault"]
+            ESO["🔄 External Secrets"]
+            Keycloak["🔑 Keycloak"]
+            SPIRE["🪪 SPIFFE / SPIRE"]
+            ACS["🛡️ ACS"]
         end
-        subgraph OS["OpenShell (openshell-system)"]
-            GW["⚡ Gateway<br/>gRPC + Policy Engine"]
-            SV["👁️ Supervisor<br/>Boundary Enforcement"]
-            SB["📦 Sandbox<br/>Pi Agent + Node.js"]
+        subgraph OS["OpenShell"]
+            GW["Gateway"]
+            SV["Supervisor"]
+            SB["Sandbox"]
         end
     end
-    User["👤 User (Bastion)"] -->|OpenShell CLI| GW
-    GW -->|creates & manages| SV
-    SV -->|enforces policy on| SB
-    SB -->|allowed by policy| DS["🤖 DeepSeek API"]
-    SB -->|allowed by policy| GH["🐙 GitHub"]
-    SB -->|allowed by policy| NPM["📦 npm"]
-    SB -.-x|BLOCKED| Google["❌ google.com"]
-    SB -.-x|BLOCKED| Evil["❌ evil-server.com"]
-    GW -->|reads secrets| Vault
-    ESO -->|syncs| Vault
-    ACS -->|scans| SB
-    SPIRE -->|issues SVID| GW
+    User["👤 User"] -->|CLI| GW
+    GW --> SV --> SB
+    SB -->|"✅ allowed"| DS["DeepSeek API"]
+    SB -->|"✅ allowed"| NPM["npm"]
+    SB -.-x|"❌ blocked"| Bad["google.com"]
+    Vault -.->|secret sync| GW
+    SPIRE -.->|identity| GW
+    ACS -.->|image scan| SB
 ```
 
-## Request Flow: User → Agent → LLM
+## Request Flow
 
-When a user asks Pi to write code, this is the complete request flow:
+When a user asks Pi to write code, the request passes through four layers before reaching the LLM.
 
 ```mermaid
-sequenceDiagram
-    participant U as 👤 User (Bastion)
-    participant CLI as OpenShell CLI
-    participant GW as Gateway
-    participant SV as Supervisor
-    participant SB as Sandbox (Pi)
-    participant BN as Boundary
-    participant DS as DeepSeek API
+graph TD
+    A["👤 User on Bastion<br/><i>openshell sandbox exec ... pi -p 'Write code'</i>"]
+    B["🔗 Gateway<br/>Authenticates the request<br/>routes to correct sandbox"]
+    C["👁️ Supervisor<br/>Enforces boundary policy<br/>monitors the sandbox"]
+    D["📦 Sandbox (Pi Agent)<br/>Runs prompt through Pi<br/>Pi calls DeepSeek for code"]
+    E["🔒 Boundary Check<br/>Is api.deepseek.com in allowlist? → ✅ Yes<br/>Resolve credential token → real API key"]
+    F["🤖 DeepSeek API<br/>Returns generated code"]
 
-    U->>CLI: openshell sandbox exec pi-agent-demo -- pi -p "Write code"
-    CLI->>GW: gRPC ExecInSandbox (TLS)
-    GW->>GW: Authenticate request
-    GW->>SV: Forward exec to supervisor
-    SV->>SB: Execute command in sandbox
-    SB->>SB: Pi processes prompt
-    SB->>BN: HTTPS to api.deepseek.com
-    BN->>BN: Check network policy ✅ ALLOWED
-    BN->>BN: Resolve credential token → real API key
-    BN->>DS: HTTPS with real API key
-    DS-->>BN: LLM response
-    BN-->>SB: Response (credential stripped)
-    SB->>SB: Pi writes code, runs it
-    SB-->>SV: Output
-    SV-->>GW: Output
-    GW-->>CLI: gRPC response
-    CLI-->>U: Display result
+    A -->|"gRPC over TLS"| B
+    B -->|"forward"| C
+    C -->|"exec in sandbox"| D
+    D -->|"HTTPS request"| E
+    E -->|"real API key injected"| F
+    F -->|"response flows back same path"| A
+
+    style E fill:#fff3cd,color:#856404
+    style F fill:#d4edda,color:#155724
 ```
 
-## Credential Flow: API Key → Vault → Sandbox
+**Key point:** The sandbox never sends the real API key. The Boundary intercepts the request, swaps the resolver token for the real key, and forwards it. The response travels back the same path.
 
-API keys are **never visible** inside the sandbox. Here is how they flow:
+## Credential Flow
+
+API keys are **never visible** inside the sandbox. They pass through three phases:
+
+**Phase 1 — Install time** (Helm chart hooks)
 
 ```mermaid
-sequenceDiagram
-    participant User as 👤 User
-    participant Helm as Helm Chart
-    participant Vault as 🔐 Vault
-    participant ESO as 🔄 ESO
-    participant K8s as K8s Secret
-    participant GW as Gateway
-    participant SB as Sandbox
-
-    User->>Helm: Install chart with --set deepseek.apiKey=sk-xxx
-    Helm->>Vault: Pre-install hook: store key in Vault
-    Helm->>K8s: Also create K8s Secret (fallback)
-    ESO->>Vault: Sync secret from Vault path
-    ESO->>K8s: Update K8s Secret
-    GW->>K8s: Read API key from Secret
-    GW->>GW: Register as OpenShell Provider credential
-    Note over GW: Real key lives here only
-    GW->>SB: Inject env: DEEPSEEK_API_KEY=openshell:resolve:env:...
-    Note over SB: Sandbox sees resolver TOKEN, never the real key
-    SB->>SB: Pi uses $DEEPSEEK_API_KEY in HTTP request
-    SB->>GW: Request with resolver token in Authorization header
-    GW->>GW: Boundary intercepts, replaces token with real key
-    GW->>DS: Forward request with real API key
+graph LR
+    U["👤 User<br/>provides API key"] -->|"helm install --set deepseek.apiKey=sk-..."| VJ["Vault Seed Job"]
+    VJ -->|"stores key at"| V["🔐 Vault<br/>secret/openshell/deepseek-api-key"]
+    VJ -->|"also creates"| KS["K8s Secret<br/>(fallback)"]
 ```
+
+**Phase 2 — Runtime sync** (ESO keeps secrets fresh)
+
+```mermaid
+graph LR
+    V["🔐 Vault"] -->|"ESO reads every 1h"| ESO["🔄 External Secrets Operator"]
+    ESO -->|"writes to"| KS["K8s Secret"]
+    KS -->|"Gateway reads"| GW["Gateway<br/>registers credential<br/>with provider"]
+```
+
+**Phase 3 — Every API call** (Boundary resolves at the edge)
+
+```mermaid
+graph LR
+    SB["📦 Sandbox<br/>sees: openshell:resolve:env:v1:..."]
+    SB -->|"sends resolver token"| BND["🔒 Boundary"]
+    BND -->|"swaps token for real key"| DS["🤖 DeepSeek API<br/>receives: sk-abc123..."]
+
+    style SB fill:#f8d7da,color:#721c24
+    style BND fill:#fff3cd,color:#856404
+    style DS fill:#d4edda,color:#155724
+```
+
+> The sandbox **never** handles the real key. Even if compromised, the resolver token is useless outside the OpenShell boundary.
 
 ## Zero Trust Policy Enforcement
 
-Every network request and filesystem access is checked against the policy:
+Every outbound request is checked. There is no default-allow.
 
 ```mermaid
-flowchart LR
-    SB["Sandbox Process"] --> BN{"Boundary<br/>Policy Check"}
-    BN -->|"host in allowlist?"| ALLOW["✅ Forward Request"]
-    BN -->|"host NOT in allowlist?"| DENY["❌ Silent Drop"]
-    BN -->|"file in read_only list?"| RO["✅ Read Allowed"]
-    BN -->|"file in read_write list?"| RW["✅ Read/Write Allowed"]
-    BN -->|"file NOT in any list?"| FD["❌ Permission Denied"]
-    
-    style ALLOW fill:#c6f6d5,color:#22543d
-    style RO fill:#c6f6d5,color:#22543d
-    style RW fill:#c6f6d5,color:#22543d
-    style DENY fill:#fed7d7,color:#742a2a
-    style FD fill:#fed7d7,color:#742a2a
+graph TD
+    P["Process in Sandbox<br/>makes a network request"] --> Q{"Is the destination host<br/>in the allowlist?"}
+    Q -->|"Yes"| A["✅ Forward request"]
+    Q -->|"No"| D["❌ Silently drop<br/>(connection times out)"]
+
+    P2["Process in Sandbox<br/>opens a file"] --> Q2{"Is the path in<br/>read_only or read_write?"}
+    Q2 -->|"read_only"| R["✅ Read allowed, write denied"]
+    Q2 -->|"read_write"| RW["✅ Read + write allowed"]
+    Q2 -->|"Neither"| FD["❌ Permission denied (EACCES)"]
+
+    style A fill:#d4edda,color:#155724
+    style R fill:#d4edda,color:#155724
+    style RW fill:#d4edda,color:#155724
+    style D fill:#f8d7da,color:#721c24
+    style FD fill:#f8d7da,color:#721c24
 ```
 
 ## Components Summary

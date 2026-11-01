@@ -22,22 +22,19 @@ This means the agent process can:
 ## How Credential Resolution Works
 
 ```mermaid
-sequenceDiagram
-    participant SB as 📦 Sandbox
-    participant BN as 🔒 Boundary (Supervisor)
-    participant DS as 🤖 DeepSeek API
+graph TD
+    SB["📦 Sandbox<br/>Pi reads $DEEPSEEK_API_KEY<br/>Value: <b>openshell:resolve:env:v1:...</b>"]
+    REQ["Pi sends HTTPS request<br/>Authorization: Bearer openshell:resolve:env:v1:..."]
+    BND["🔒 Boundary intercepts the request"]
+    CHK["Boundary checks:<br/>1. Detect resolver token in header ✅<br/>2. Look up real key from provider config ✅<br/>3. Verify destination matches provider ✅<br/>4. Replace token with real key"]
+    FWD["Forward to DeepSeek API<br/>Authorization: Bearer <b>sk-abc123...real-key</b>"]
+    RES["Response returns to sandbox<br/>(credential stripped from logs)"]
 
-    Note over SB: Env var: DEEPSEEK_API_KEY=<br/>openshell:resolve:env:v1:deepseek:api_key:...
+    SB --> REQ --> BND --> CHK --> FWD --> RES
 
-    SB->>SB: Pi reads $DEEPSEEK_API_KEY
-    SB->>BN: HTTPS request with<br/>Authorization: Bearer openshell:resolve:env:v1:...
-    BN->>BN: Detect resolver token in header
-    BN->>BN: Look up real key from provider config
-    BN->>BN: Verify destination matches credential's provider
-    BN->>BN: Replace resolver token with real key
-    BN->>DS: HTTPS request with<br/>Authorization: Bearer sk-abc123...real-key
-    DS-->>BN: Response
-    BN-->>SB: Response (credential stripped from logs)
+    style SB fill:#f8d7da,color:#721c24
+    style CHK fill:#fff3cd,color:#856404
+    style FWD fill:#d4edda,color:#155724
 ```
 
 The critical security properties:
@@ -130,35 +127,15 @@ Result: **401 Unauthorized**. The resolver token is meaningless outside the Open
 exit
 ```
 
-## Credential Flow Diagram
+## Credential Lifecycle
 
-Here is the complete lifecycle of a credential:
+The real API key passes through three zones. Only the Gateway zone ever holds the real key.
 
-```mermaid
-flowchart TB
-    subgraph Install["Helm Install"]
-        U["User provides<br/>DeepSeek API key"] --> HV["Vault Seed Job<br/>stores key in Vault"]
-        HV --> VS["Vault: secret/openshell/<br/>deepseek-api-key"]
-    end
-    
-    subgraph Runtime["Runtime"]
-        VS --> ESO["ESO syncs<br/>to K8s Secret"]
-        ESO --> KS["K8s Secret:<br/>deepseek-api-key"]
-        KS --> GW["Gateway reads<br/>real key"]
-        GW --> PR["Provider registered<br/>with real credential"]
-    end
-    
-    subgraph Sandbox["Inside Sandbox"]
-        PR --> RT["Resolver token<br/>injected as env var"]
-        RT --> PI["Pi uses token<br/>in API requests"]
-        PI --> BND["Boundary intercepts<br/>resolves token"]
-        BND --> DS["Real key sent<br/>to DeepSeek"]
-    end
-    
-    style Install fill:#bee3f8,color:#2a4365
-    style Runtime fill:#e2e8f0,color:#2d3748
-    style Sandbox fill:#c6f6d5,color:#22543d
-```
+| Phase | What Happens | Who Sees the Real Key? |
+|-------|-------------|----------------------|
+| **Install** | Helm stores key in Vault → ESO syncs to K8s Secret | Vault and K8s Secret (encrypted at rest) |
+| **Runtime** | Gateway reads K8s Secret, registers provider | Gateway only |
+| **API Call** | Sandbox sends resolver token → Boundary swaps for real key → DeepSeek receives real key | Boundary (in-memory, per-request) |
 
 ## Key Takeaways
 

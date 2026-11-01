@@ -92,29 +92,22 @@ Watch as Pi:
 
 ## What Happened Under the Hood
 
+Pi performed these steps, and every outbound call went through the Boundary:
+
 ```mermaid
-sequenceDiagram
-    participant Pi as Pi Agent
-    participant BN as Boundary
-    participant DS as DeepSeek API
-    participant NPM as npm Registry
-    participant Node as Node.js Runtime
+graph TD
+    S1["1️⃣ Pi sends prompt to DeepSeek"]
+    S2["🔒 Boundary checks: api.deepseek.com in allowlist? ✅<br/>Resolves credential token → real API key"]
+    S3["2️⃣ DeepSeek returns generated code"]
+    S4["3️⃣ Pi writes server.js to disk"]
+    S5["4️⃣ Pi runs: npm install express"]
+    S6["🔒 Boundary checks: registry.npmjs.org in allowlist? ✅"]
+    S7["5️⃣ Pi starts server, tests with curl"]
 
-    Pi->>BN: HTTPS to api.deepseek.com
-    BN->>BN: Policy check ✅ api.deepseek.com allowed
-    BN->>BN: Resolve credential token → real key
-    BN->>DS: Forward with real API key
-    DS-->>Pi: Generated code
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
 
-    Pi->>Node: Write server.js
-    Pi->>BN: HTTPS to registry.npmjs.org
-    BN->>BN: Policy check ✅ npm allowed
-    BN->>NPM: npm install express
-    NPM-->>Pi: Package downloaded
-
-    Pi->>Node: node server.js
-    Pi->>Node: curl localhost:3000/health
-    Node-->>Pi: {"status": "ok"}
+    style S2 fill:#fff3cd,color:#856404
+    style S6 fill:#fff3cd,color:#856404
 ```
 
 Every outbound network request was checked by the boundary:

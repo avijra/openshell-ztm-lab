@@ -7,23 +7,12 @@ In this module you will install the OpenShell Zero Trust Demo as a Helm chart di
 The Helm chart is hosted on GitHub Pages and registered in the cluster as a `HelmChartRepository` custom resource. This makes it appear in the OpenShift Developer Catalog alongside other charts.
 
 ```mermaid
-sequenceDiagram
-    participant User as 👤 You
-    participant Console as OpenShift Console
-    participant HCR as HelmChartRepository CR
-    participant GH as GitHub Pages
-    participant Helm as Helm Engine
-    participant NS as openshell-system
-
-    User->>Console: Browse Developer Catalog
-    Console->>HCR: Discover registered chart repos
-    HCR->>GH: Fetch index.yaml
-    GH-->>Console: Chart metadata + logo
-    User->>Console: Click "OpenShell ZTM Demo", fill form
-    Console->>Helm: helm install with values
-    Helm->>NS: Create namespace, deploy Gateway, Supervisor
-    Helm->>NS: Pre-install hook: seed API key in Vault
-    Helm->>NS: Post-install hook: create sandbox, import Pi
+graph TD
+    A["1. HelmChartRepository CR<br/>points to GitHub Pages URL"] -->|"Console discovers chart"| B["2. Developer Catalog<br/>shows OpenShell tile"]
+    B -->|"User fills form, clicks Install"| C["3. Helm Engine"]
+    C -->|"pre-install hook"| D["Vault Seed Job<br/>stores API key in Vault"]
+    C -->|"main resources"| E["Gateway + Supervisor + Route"]
+    C -->|"post-install hook"| F["Sandbox Create Job<br/>creates pi-agent-demo sandbox"]
 ```
 
 ## Step 1 — Register the Chart Repository
@@ -164,20 +153,27 @@ Let's trace exactly what the chart created:
 
 ```mermaid
 graph TD
-    HC["Helm Chart v1.2.0"] --> NS["Namespace: openshell-system"]
-    HC --> GW["Gateway Deployment"]
-    HC --> SV["Supervisor StatefulSet"]
-    HC --> RT["Route (TLS)"]
-    HC --> CM["Policy ConfigMap"]
-    HC --> VJ["Pre-install: Vault Seed Job"]
-    HC --> SJ["Post-install: Sandbox Create Job"]
-    VJ --> V["Vault: secret/openshell/deepseek-api-key"]
-    SJ --> SB["AgentSandbox: pi-agent-demo"]
-    SJ --> PP["Provider Profile: deepseek"]
-    SJ --> PR["Provider: deepseek w/ credential"]
-    
-    style VJ fill:#bee3f8,color:#2a4365
-    style SJ fill:#bee3f8,color:#2a4365
+    HC["Helm Chart v1.2.0"]
+
+    subgraph hooks["Hook Jobs"]
+        VJ["Pre-install:<br/>Vault Seed Job"]
+        SJ["Post-install:<br/>Sandbox Create Job"]
+    end
+
+    subgraph main["Main Resources"]
+        GW["Gateway"]
+        SV["Supervisor"]
+        RT["Route (TLS)"]
+        CM["Policy ConfigMap"]
+    end
+
+    HC --> hooks
+    HC --> main
+    VJ -->|"stores key"| V["🔐 Vault"]
+    SJ -->|"creates"| SB["📦 Sandbox: pi-agent-demo"]
+
+    style hooks fill:#e8f4f8,color:#2a4365
+    style main fill:#f0f0f0,color:#333
 ```
 
 | Resource | Purpose |

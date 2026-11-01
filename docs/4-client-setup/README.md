@@ -105,23 +105,18 @@ source ~/.bashrc
 Here is how the CLI communicates with the sandbox:
 
 ```mermaid
-sequenceDiagram
-    participant CLI as OpenShell CLI<br/>(Bastion)
-    participant Route as OpenShift Route<br/>(TLS termination)
-    participant GW as Gateway Pod<br/>(gRPC server)
-    participant SV as Supervisor<br/>(boundary)
-    participant SB as Sandbox Pod<br/>(Pi Agent)
+graph TD
+    CLI["💻 OpenShell CLI<br/>(on Bastion)"]
+    RT["🔗 OpenShift Route<br/>TLS termination"]
+    GW["⚡ Gateway Pod<br/>authenticates, routes"]
+    SV["👁️ Supervisor<br/>enforces boundary"]
+    SB["📦 Sandbox Pod<br/>runs Pi Agent"]
 
-    CLI->>Route: gRPC over HTTPS
-    Note over Route: TLS terminated by<br/>OpenShift Router
-    Route->>GW: gRPC (plaintext inside cluster)
-    GW->>GW: Authenticate + authorize
-    GW->>SV: Forward to supervisor
-    SV->>SB: Execute in sandbox
-    SB-->>SV: Result
-    SV-->>GW: Result
-    GW-->>Route: gRPC response
-    Route-->>CLI: HTTPS response
+    CLI -->|"gRPC over HTTPS"| RT
+    RT -->|"plaintext inside cluster"| GW
+    GW -->|"forward exec"| SV
+    SV -->|"run command"| SB
+    SB -->|"result returns<br/>same path back"| CLI
 ```
 
 ## Quick Reference

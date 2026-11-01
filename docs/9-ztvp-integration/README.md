@@ -71,22 +71,18 @@ api_key       sk-****...
 
 The Vault auth method is Kubernetes auth mounted at path `hub/`. The vault-seed Job authenticates using its ServiceAccount token.
 
-### Vault Architecture Diagram
+### How the Vault Seed Job Authenticates
 
 ```mermaid
-sequenceDiagram
-    participant Job as Vault Seed Job
-    participant K8s as K8s API
-    participant VA as Vault (hub/ auth)
-    participant VKV as Vault KV Engine
+graph TD
+    J["Vault Seed Job<br/>(runs as pre-install hook)"]
+    SA["Reads its ServiceAccount<br/>JWT token from K8s"]
+    AUTH["POST /v1/auth/hub/login<br/>role=vault-seed-job"]
+    VER["Vault calls K8s TokenReview<br/>to verify the JWT"]
+    TOK["Vault issues a client token<br/>(scoped to write secrets)"]
+    WRITE["Job writes API key to<br/>secret/openshell/deepseek-api-key"]
 
-    Job->>K8s: Read ServiceAccount token
-    Job->>VA: POST /v1/auth/hub/login<br/>role=vault-seed-job, jwt=<sa-token>
-    VA->>K8s: Verify token (TokenReview)
-    K8s-->>VA: Valid, SA=vault-seed-job, NS=openshell-system
-    VA-->>Job: Vault client token
-    Job->>VKV: PUT /v1/secret/data/openshell/deepseek-api-key<br/>{"data": {"api_key": "sk-..."}}
-    VKV-->>Job: OK
+    J --> SA --> AUTH --> VER --> TOK --> WRITE
 ```
 
 ## Pillar 2: External Secrets Operator — Secret Sync
@@ -118,18 +114,15 @@ echo "..."
 ### How ESO Syncs
 
 ```mermaid
-sequenceDiagram
-    participant ESO as External Secrets Operator
-    participant ES as ExternalSecret CR
-    participant Vault as Vault KV
-    participant K8s as K8s Secret
+graph LR
+    ES["ExternalSecret CR<br/>(declares what to sync)"]
+    ESO["ESO watches CR<br/>reads from Vault every 1h"]
+    V["🔐 Vault KV"]
+    KS["K8s Secret<br/>deepseek-api-key"]
 
-    loop Every refresh interval (1h)
-        ESO->>ES: Watch for ExternalSecret
-        ESO->>Vault: Read secret/openshell/deepseek-api-key
-        Vault-->>ESO: {"api_key": "sk-..."}
-        ESO->>K8s: Create/Update Secret deepseek-api-key
-    end
+    ES --> ESO
+    V -->|"ESO reads"| ESO
+    ESO -->|"creates/updates"| KS
 ```
 
 ## Pillar 3: SPIFFE/SPIRE — Workload Identity
@@ -230,18 +223,14 @@ Protocol: openid-connect
 ### Authentication Flow
 
 ```mermaid
-sequenceDiagram
-    participant U as 👤 User
-    participant KC as Keycloak (ztvp realm)
-    participant GW as OpenShell Gateway
+graph TD
+    U["👤 User authenticates<br/>with Keycloak (ztvp realm)"]
+    JWT["Keycloak issues JWT<br/>audience: openshell-gateway"]
+    REQ["User sends gRPC request<br/>to Gateway with JWT attached"]
+    VAL["Gateway validates JWT:<br/>✅ Signature valid?<br/>✅ Issuer = keycloak.../realms/ztvp?<br/>✅ Audience = openshell-gateway?<br/>✅ Not expired?"]
+    OK["✅ Request authorized"]
 
-    Note over GW: OIDC configured:<br/>issuer=keycloak.../realms/ztvp<br/>audience=openshell-gateway
-
-    U->>KC: Authenticate (username/password or SSO)
-    KC-->>U: JWT access token
-    U->>GW: gRPC request + JWT
-    GW->>GW: Validate JWT signature<br/>Check issuer, audience, expiry
-    GW-->>U: Authorized response
+    U --> JWT --> REQ --> VAL --> OK
 ```
 
 ## Defense in Depth Summary
