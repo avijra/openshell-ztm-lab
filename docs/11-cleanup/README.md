@@ -93,6 +93,7 @@ You have completed the **OpenShell on Zero Trust Demo Lab**. Here's everything y
 | **Filesystem Zero Trust** | Only /sandbox and /tmp writable; /etc, /usr, / all locked by Landlock LSM |
 | **Credential Security** | Real API key never visible in sandbox — only resolver tokens that are useless outside the boundary |
 | **ZTVP Integration** | Vault stores secrets, ESO syncs them, SPIFFE provides identity, ACS scans images, Keycloak authenticates users |
+| **User Authentication** | OIDC flow from Keycloak, JWT token acquisition and decoding, Gateway validation |
 | **Dynamic Policy** | Added pypi.org live → HTTP 200 → Removed → blocked again, all without restart |
 
 ## The Takeaway

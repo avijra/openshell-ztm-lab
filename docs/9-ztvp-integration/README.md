@@ -255,6 +255,6 @@ Each pillar addresses a different attack vector. An attacker would need to defea
 
 ## Next Step
 
-You've seen all five pillars of the ZTVP working with OpenShell. For the final demo, you'll **dynamically update** the zero-trust policy — adding a new allowed endpoint and watching it take effect live.
+You've seen all five pillars of the ZTVP working with OpenShell. Next, you'll explore how **user authentication** works — from Keycloak OIDC to JWT tokens to what the Gateway validates.
 
-Proceed to: **Dynamic Policy** →
+Proceed to: **User Authentication** →

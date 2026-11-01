@@ -64,8 +64,9 @@ In this lab you will:
 | AI Agent Coding | 5 min | Watch Pi write real code with DeepSeek |
 | Zero Trust Demos | 10 min | Prove network + filesystem + credential restrictions |
 | ZTVP Integration | 5 min | Explore Vault, SPIFFE, ACS, Keycloak, ESO |
+| User Authentication | 5 min | OIDC flow, JWT tokens, Keycloak login |
 | Dynamic Policy | 3 min | Update the policy live |
-| **Total** | **~40 min** | |
+| **Total** | **~45 min** | |
 
 ## Fill In Your Environment
 
