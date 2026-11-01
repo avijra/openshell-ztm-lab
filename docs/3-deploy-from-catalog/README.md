@@ -141,7 +141,7 @@ Press `Ctrl+C` to stop watching.
 Confirm the sandbox pod is running:
 
 ```bash
-oc get pods -n openshell-system -l sandbox=pi-agent-demo
+oc get pod default--pi-agent-demo -n openshell-system
 ```
 
 Expected output:
