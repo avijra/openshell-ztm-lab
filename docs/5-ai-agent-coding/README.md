@@ -4,7 +4,7 @@ In this module you will watch the Pi coding agent **write, run, and test real co
 
 ## What Is Pi?
 
-**Pi** is NVIDIA's agentic coding assistant. Unlike ChatGPT or Copilot (which *suggest* code), Pi is **agentic** — it takes action:
+**[Pi](https://pi.dev/)** is an agentic coding assistant by [Earendil Inc.](https://pi.dev/) Unlike ChatGPT or Copilot (which *suggest* code), Pi is **agentic** — it takes action:
 
 | Capability | What it means |
 |-----------|--------------|

@@ -48,7 +48,7 @@ In this lab you will:
 | **ROSA** | Red Hat OpenShift Service on AWS — a managed Kubernetes platform | The cluster running everything |
 | **ZTVP** | Zero Trust Validated Pattern — a curated set of security tools deployed together | Provides Vault, ESO, Keycloak, SPIFFE, and ACS |
 | **OpenShell** | NVIDIA's framework for running AI agents in secure sandboxes | Enforces network, filesystem, and credential policies |
-| **Pi** | NVIDIA's agentic coding assistant (Rust binary) | The AI agent writing and running code inside the sandbox |
+| **[Pi](https://pi.dev/)** | An agentic coding assistant by Earendil Inc. | The AI agent writing and running code inside the sandbox |
 | **DeepSeek** | A large language model (LLM) API | The "brain" that generates code when Pi asks for it |
 | **Landlock LSM** | A Linux kernel security module for filesystem restrictions | Enforces which files the agent can read/write — at the kernel level |
 | **Helm** | A package manager for Kubernetes | How we deploy OpenShell in one click from the OpenShift catalog |
