@@ -134,20 +134,13 @@ exit
 
 ## Policy Change Flow
 
-```mermaid
-graph TD
-    S1["1️⃣ Admin edits ConfigMap<br/>adds pypi.org to allowlist"]
-    S2["2️⃣ Admin runs:<br/>openshell sandbox restart pi-agent-demo"]
-    S3["3️⃣ Gateway terminates old sandbox"]
-    S4["4️⃣ Gateway reads updated ConfigMap"]
-    S5["5️⃣ Gateway starts new sandbox<br/>with new policy applied"]
-    S6["6️⃣ pypi.org now reachable ✅"]
+The update is a three-step process: **edit → restart → verify**.
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6
-
-    style S1 fill:#fff3cd,color:#856404
-    style S6 fill:#d4edda,color:#155724
-```
+| Step | Command | What Happens |
+|------|---------|-------------|
+| **Edit** | `oc edit configmap pi-sandbox-policy` | Add `pypi.org` to the network allowlist |
+| **Restart** | `openshell sandbox restart pi-agent-demo` | Gateway kills old sandbox, reads new ConfigMap, starts fresh sandbox with updated policy |
+| **Verify** | `curl https://pypi.org` inside sandbox | Connection succeeds — pypi.org is now reachable |
 
 ## Step 6 — Revert the Policy (Optional)
 
