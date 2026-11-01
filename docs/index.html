@@ -76,12 +76,14 @@
     }
     .markdown-section blockquote p { margin: 0; }
 
-    /* ─── Mermaid diagrams — overflow fix ─── */
+    /* ─── Mermaid diagrams — overflow fix + edge label fix ─── */
     .mermaid {
       overflow-x: auto; overflow-y: hidden;
       max-width: 100%; padding: 16px 0; text-align: center;
     }
     .mermaid svg { max-width: 100%; height: auto; }
+    .mermaid .edgeLabel { color: #333 !important; }
+    .mermaid .edgeLabel span { color: #333 !important; }
 
     /* ─── Images ─── */
     .markdown-section img {
@@ -298,6 +300,7 @@
         secondaryColor: '#f5f5f5',
         tertiaryColor: '#e0e0e0',
         lineColor: '#6a6e73',
+        edgeLabelBackground: '#f0f0f0',
         fontFamily: '"Red Hat Text", sans-serif',
         fontSize: '13px'
       }
