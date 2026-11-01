@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenShell on Zero Trust — Demo Lab</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Text:wght@400;500;700&family=Red+Hat+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --base-font-size: 14px;
+      --base-font-family: "Red Hat Text", "Open Sans", Helvetica, Arial, sans-serif;
+      --theme-color: #76B900;
+      --content-max-width: 75em;
+      --sidebar-width: 19rem;
+    }
+    .markdown-section pre, .markdown-section pre > code {
+      white-space: pre-wrap !important;
+      overflow-wrap: break-word !important;
+      font-family: "Red Hat Mono", monospace;
+    }
+    .markdown-section img {
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      padding: 4px;
+      max-width: 100%;
+    }
+    .sidebar { background-color: #1a1a2e; }
+    .sidebar > h1 { color: #76B900; font-weight: 700; }
+    .sidebar ul li a { color: #cdd6e0 !important; }
+    .sidebar ul li a:hover { color: #76B900 !important; }
+    .sidebar ul li.active > a { color: #76B900 !important; font-weight: 700; }
+    .app-name-link { color: #76B900 !important; }
+    .user-config-form {
+      margin-left: 7%; background-color: #1a1a2e; color: #f0f0f0;
+      padding: 15px 5%; border-radius: 8px;
+      display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+    }
+    .user-inputs { flex: 1; min-width: 140px; }
+    .user-inputs label { font-size: 11px; display: block; margin-bottom: 4px; color: #b0b8c4; text-transform: uppercase; letter-spacing: 0.5px; }
+    .user-inputs input[type=text], .user-inputs input[type=password] {
+      width: 100%; padding: 8px 10px; border: 1px solid #555; border-radius: 4px;
+      background: #2a2a3e; color: #f0f0f0; font-family: "Red Hat Mono", monospace; font-size: 13px;
+      box-sizing: border-box;
+    }
+    .user-inputs input:focus { outline: none; border-color: #76B900; }
+    .config-btn {
+      font-size: 12px; padding: 9px 20px; cursor: pointer; border: none;
+      border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .config-btn.save { background-color: #76B900; color: #fff; }
+    .config-btn.clear { background-color: #555; color: #ddd; }
+    .config-btn:hover { opacity: 0.85; }
+    .quick-links { margin-left: 7%; margin-top: 8px; }
+    .quick-links a {
+      display: inline-block; margin-right: 12px; padding: 4px 10px;
+      background: #f0f0f0; border-radius: 4px; font-size: 12px;
+      text-decoration: none; color: #333;
+    }
+    .quick-links a:hover { background: #76B900; color: #fff; }
+    p.tip { border-left: 4px solid #76B900; padding: 12px; background: #f6fff0; }
+    p.warn { border-left: 4px solid #e53e3e; padding: 12px; background: #fff5f5; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="user-config-form">
+    <div class="user-inputs">
+      <label>Bastion Host</label>
+      <input type="text" id="bastion" placeholder="bastion.xxxxx.sandbox.opentlc.com">
+    </div>
+    <div class="user-inputs">
+      <label>SSH Password</label>
+      <input type="password" id="sshpass" placeholder="password">
+    </div>
+    <div class="user-inputs">
+      <label>Cluster Domain</label>
+      <input type="text" id="cdomain" placeholder="apps.rosa.rosa-xxxxx.xxxx.p3.openshiftapps.com">
+    </div>
+    <div class="user-inputs">
+      <label>DeepSeek API Key</label>
+      <input type="password" id="dskey" placeholder="sk-...">
+    </div>
+    <button class="config-btn save" onclick="saveConfig()">Save</button>
+    <button class="config-btn clear" onclick="clearConfig()">Clear</button>
+  </div>
+
+  <div class="quick-links" id="dynamic-links"></div>
+
+  <script>
+    document.getElementById('bastion').value = localStorage.getItem('BASTION_HOST') || '';
+    document.getElementById('sshpass').value = localStorage.getItem('SSH_PASSWORD') || '';
+    document.getElementById('cdomain').value = localStorage.getItem('CLUSTER_DOMAIN') || '';
+    document.getElementById('dskey').value = localStorage.getItem('DEEPSEEK_KEY') || '';
+
+    function populateLinks() {
+      const cd = localStorage.getItem('CLUSTER_DOMAIN') || '<CLUSTER_DOMAIN>';
+      const el = document.getElementById('dynamic-links');
+      if (!el) return;
+      el.innerHTML = '';
+      [
+        { name: '📺 OpenShift Console', url: 'https://console-openshift-console.' + cd },
+        { name: '🔐 Vault UI', url: 'https://vault.' + cd },
+        { name: '🛡️ ACS Console', url: 'https://central-stackrox.' + cd },
+        { name: '🔑 Keycloak', url: 'https://keycloak.' + cd + '/admin' }
+      ].forEach(function(l) {
+        var a = document.createElement('a');
+        a.href = l.url; a.textContent = l.name; a.target = '_blank';
+        el.appendChild(a);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', populateLinks);
+
+    function saveConfig() {
+      var b = document.getElementById('bastion').value;
+      var s = document.getElementById('sshpass').value;
+      var c = document.getElementById('cdomain').value.replace(/^https?:\/\//, '').replace(/[\/&?]/g, '');
+      var k = document.getElementById('dskey').value;
+      if (!b) { alert('Please enter the Bastion Host'); return; }
+      if (!c) { alert('Please enter the Cluster Domain'); return; }
+      localStorage.setItem('BASTION_HOST', b);
+      localStorage.setItem('SSH_PASSWORD', s);
+      localStorage.setItem('CLUSTER_DOMAIN', c);
+      localStorage.setItem('DEEPSEEK_KEY', k);
+      location.reload();
+    }
+    function clearConfig() {
+      ['BASTION_HOST','SSH_PASSWORD','CLUSTER_DOMAIN','DEEPSEEK_KEY'].forEach(function(k) { localStorage.removeItem(k); });
+      document.querySelectorAll('.user-config-form input').forEach(function(i) { i.value = ''; });
+      location.reload();
+    }
+
+    window.$docsify = {
+      auto2top: true,
+      executeScript: true,
+      name: '🛡️ OpenShell ZT Lab',
+      repo: 'https://github.com/avijra/openshell-ztm-lab',
+      loadSidebar: true,
+      subMaxLevel: 2,
+      sidebarDisplayLevel: 1,
+      alias: { '/.*/_sidebar.md': '/_sidebar.md' },
+      copyCode: { buttonText: '📋', errorText: '❌', successText: '✅ copied' },
+      pagination: { crossChapter: true },
+      plugins: [
+        function(hook) {
+          hook.beforeEach(function(content) {
+            var bastion = localStorage.getItem('BASTION_HOST') || '<BASTION_HOST>';
+            var sshpass = localStorage.getItem('SSH_PASSWORD') || '<SSH_PASSWORD>';
+            var cd = localStorage.getItem('CLUSTER_DOMAIN') || '<CLUSTER_DOMAIN>';
+            var dskey = localStorage.getItem('DEEPSEEK_KEY') || '<DEEPSEEK_API_KEY>';
+            return content
+              .replace(/<BASTION_HOST>/g, bastion)
+              .replace(/<SSH_PASSWORD>/g, sshpass)
+              .replace(/<CLUSTER_DOMAIN>/g, cd)
+              .replace(/<DEEPSEEK_API_KEY>/g, dskey);
+          });
+          var footer = '<hr/><p style="font-size:12px;color:#888;">OpenShell Zero Trust Demo Lab — NVIDIA x Red Hat</p>';
+          hook.afterEach(function(html) { return html + footer; });
+        }
+      ],
+      search: 'auto'
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: { primaryColor: '#76B900', primaryTextColor: '#fff', lineColor: '#555' } });
+    window.$docsify.markdown = {
+      renderer: {
+        code: function(code, lang) {
+          if (lang === 'mermaid') { return '<div class="mermaid">' + code + '</div>'; }
+          return this.origin.code.apply(this, arguments);
+        }
+      }
+    };
+    if (window.$docsify.plugins) {
+      window.$docsify.plugins.push(function(hook) {
+        hook.doneEach(function() { mermaid.run(undefined, document.querySelectorAll('.mermaid')); });
+      });
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+</body>
+</html>
