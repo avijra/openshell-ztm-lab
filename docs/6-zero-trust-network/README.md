@@ -78,7 +78,7 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 https://github.com
 Expected:
 
 ```
-HTTP 301
+HTTP 200
 ```
 
 ✅ **Allowed** — `github.com` is in the policy and `curl` is an allowed binary.
@@ -138,7 +138,7 @@ exit
 | Test | Target | Expected | Policy |
 |------|--------|----------|--------|
 | DeepSeek API | `api.deepseek.com` | HTTP 200 (with auth) | ✅ Allowed |
-| GitHub | `github.com` | HTTP 301 | ✅ Allowed |
+| GitHub | `github.com` | HTTP 200 | ✅ Allowed |
 | Google | `www.google.com` | Permission denied | ❌ Denied |
 | Example.com | `example.com` | Permission denied | ❌ Denied |
 | Exfil Server | `evil-exfil-server.com` | Permission denied | ❌ Denied |

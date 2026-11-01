@@ -83,7 +83,7 @@ openshell-ztm-demo    5s
 
    | Field | Value | Why |
    |-------|-------|-----|
-   | **Release Name** | `openshell` | Identifies this Helm release |
+   | **Release Name** | `openshell-ztm-demo` | Identifies this Helm release |
    | **Namespace** | `openshell-system` | The chart creates this namespace |
    | **DeepSeek > Enabled** | ✅ checked | Enable the DeepSeek LLM provider |
    | **DeepSeek > API Key** | `<DEEPSEEK_API_KEY>` | Your personal DeepSeek key |

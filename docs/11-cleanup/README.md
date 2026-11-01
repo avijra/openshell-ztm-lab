@@ -7,7 +7,7 @@ This module walks through removing the OpenShell demo from the cluster. The ZTVP
 From the bastion:
 
 ```bash
-helm uninstall openshell -n openshell-system
+helm uninstall openshell-ztm-demo -n openshell-system
 ```
 
 **Why:** `helm uninstall` removes all resources created by the chart: Deployments, StatefulSets, Services, Routes, ConfigMaps, and Secrets. Helm tracks these resources via the release metadata.
@@ -15,7 +15,7 @@ helm uninstall openshell -n openshell-system
 Expected:
 
 ```
-release "openshell" uninstalled
+release "openshell-ztm-demo" uninstalled
 ```
 
 ## Step 2 — Verify Resources Are Gone
@@ -32,19 +32,17 @@ No resources found in openshell-system namespace.
 
 ## Step 3 — Clean Up the Vault Secret (Optional)
 
-The API key stored in Vault persists after Helm uninstall. To remove it:
+The API key stored in Vault persists after Helm uninstall. To remove it, use the Vault API from the bastion (the `vault` CLI is not installed):
 
 ```bash
-export VAULT_ADDR=https://vault.<CLUSTER_DOMAIN>
-export VAULT_SKIP_VERIFY=true
-
+VAULT_ADDR=https://vault-vault.<CLUSTER_DOMAIN>
 VAULT_TOKEN=$(oc get secret vault-init -n vault -o jsonpath='{.data.root_token}' | base64 -d)
-export VAULT_TOKEN
 
-vault kv delete secret/openshell/deepseek-api-key
+curl -sk -X DELETE "$VAULT_ADDR/v1/hub/infra/openshell/deepseek" \
+  -H "X-Vault-Token: $VAULT_TOKEN"
 ```
 
-**Why:** Vault secrets are external to Kubernetes. `helm uninstall` does not touch them. If you plan to reinstall, you can leave the key in Vault — the chart's pre-install hook will overwrite it with the new value.
+**Why:** Vault secrets are external to Kubernetes. `helm uninstall` does not touch them. The key is stored at Vault path `hub/infra/openshell/deepseek`. If you plan to reinstall, you can leave the key in Vault — the chart's pre-install hook will overwrite it with the new value.
 
 ## Step 4 — Remove the Namespace (Optional)
 

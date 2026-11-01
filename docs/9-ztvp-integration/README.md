@@ -181,7 +181,7 @@ Keycloak provides SSO and OIDC for user authentication. The ZTVP deploys a `ztvp
 
 ```bash
 KEYCLOAK_URL=https://keycloak.<CLUSTER_DOMAIN>
-ADMIN_PASSWORD=$(oc get secret keycloak-initial-admin -n keycloak-system -o jsonpath='{.data.password}' | base64 -d)
+ADMIN_PASSWORD=$(oc get secret keycloak-admin-user -n keycloak-system -o jsonpath='{.data.password}' | base64 -d)
 
 TOKEN=$(curl -sk "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
   -d "client_id=admin-cli" \

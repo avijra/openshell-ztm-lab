@@ -22,7 +22,7 @@ The ZTVP provides these components, which are already running:
 
 | Component | Status | Verification |
 |-----------|--------|--------------|
-| HashiCorp Vault | ✅ Deployed | `https://vault.<CLUSTER_DOMAIN>` |
+| HashiCorp Vault | ✅ Deployed | `https://vault-vault.<CLUSTER_DOMAIN>` |
 | External Secrets Operator | ✅ Deployed | namespace `external-secrets-operator` |
 | Keycloak | ✅ Deployed | `https://keycloak.<CLUSTER_DOMAIN>` |
 | SPIFFE/SPIRE | ✅ Deployed | namespace `zero-trust-workload-identity-manager` |
