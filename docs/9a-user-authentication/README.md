@@ -8,31 +8,29 @@ This module walks through the full OIDC authentication flow — from creating a 
 
 ## The Current State: Unauthenticated
 
-Verify your current identity:
+Right now you can manage sandboxes without any login credentials. Verify by listing sandboxes — no token required:
 
 ```bash
-openshell whoami
+openshell sandbox list
 ```
 
 Expected:
 
 ```
-Current User
-
-  Subject: unauthenticated-local-dev
-  Name: Unauthenticated Local Dev
-  Provider: local_dev
-  Roles: openshell-user, openshell-admin
-  Scopes: openshell:all
+NAME           CREATED              PHASE
+pi-agent-demo  2026-xx-xx xx:xx:xx  Ready
 ```
 
-> **Reading this output:**
-> - **Subject**: `unauthenticated-local-dev` — a placeholder identity. The Gateway assigned you a default identity because no credentials were presented.
-> - **Provider**: `local_dev` — the identity came from the "local dev" provider (i.e., the Gateway's built-in fallback), not from Keycloak or any real identity provider.
-> - **Roles**: `openshell-user, openshell-admin` — you get *full admin access* by default. In production, unauthenticated users would get **no access**.
-> - **Scopes**: `openshell:all` — unrestricted. Every operation is permitted.
->
-> **This is fine for a lab, but dangerous in production.** Anyone who knows the Gateway URL gets full admin rights.
+This works because the Gateway is configured with `allowUnauthenticatedUsers: true`. Under the hood, the Gateway assigns you a **default identity**:
+
+| Property | Value | Meaning |
+|----------|-------|---------|
+| **Subject** | `unauthenticated-local-dev` | A placeholder — the Gateway doesn't know who you are |
+| **Provider** | `local_dev` | The identity came from the Gateway's built-in fallback, not from Keycloak |
+| **Roles** | `openshell-user, openshell-admin` | Full admin access by default |
+| **Scopes** | `openshell:all` | Every operation is permitted |
+
+> **This is fine for a lab, but dangerous in production.** Anyone who knows the Gateway URL gets full admin rights. There is no audit trail — every action is logged as "someone did something" rather than "demo-engineer created sandbox X at 14:32 UTC".
 
 ## The Authentication Architecture
 
@@ -279,21 +277,9 @@ After logging in through the browser, the CLI stores the token locally. All subs
 
 > **On the bastion (headless),** the browser can't open. In a real deployment, engineers would run the OpenShell CLI on their laptops where a browser is available. The bastion uses `allowUnauthenticatedUsers: true` as a convenience.
 
-## Step 6 — What Authenticated Identity Looks Like
+## Step 6 — Authenticated vs Unauthenticated
 
-After completing `openshell gateway login`, `whoami` would show:
-
-```
-Current User
-
-  Subject: demo-engineer
-  Name: Demo Engineer
-  Provider: oidc (keycloak.../realms/ztvp)
-  Roles: openshell-user
-  Scopes: openid, profile, email
-```
-
-Compare this with the unauthenticated identity:
+After completing `openshell gateway login`, the Gateway would identify you by the JWT claims rather than the fallback identity. Compare:
 
 | Property | Unauthenticated | Authenticated |
 |----------|----------------|---------------|
