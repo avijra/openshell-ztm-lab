@@ -1,10 +1,10 @@
 # Dynamic Policy
 
-In this module you will update the zero-trust policy live — adding a new allowed endpoint and verifying the change takes effect after a sandbox restart.
+In this module you will update the zero-trust policy live — adding a new allowed endpoint and verifying the change takes effect immediately, without redeploying the chart or recreating the sandbox.
 
 ## Why Dynamic Policy?
 
-In the real world, AI agents need evolving capabilities. A new API, a new package registry, a new data source. Rather than redeploying the entire chart, OpenShell supports updating the policy ConfigMap and reloading it.
+In the real world, AI agents need evolving capabilities. A new API, a new package registry, a new data source. Rather than redeploying the entire chart, OpenShell supports updating the policy on a live sandbox with a single CLI command.
 
 ## Current Policy State
 
@@ -43,62 +43,42 @@ curl: (7) Failed to connect to pypi.org port 443 after 2 ms: Couldn't connect to
 exit
 ```
 
-## Step 2 — Update the Policy ConfigMap
+## Step 2 — View the Current Policy
 
-From the bastion, edit the policy ConfigMap to add `pypi.org`:
-
-```bash
-oc get configmap pi-sandbox-policy -n openshell-system -o yaml > /tmp/policy-backup.yaml
-```
-
-**Why:** Always back up the current policy before modifying it. This lets you revert if something goes wrong.
-
-Now patch the ConfigMap to add pypi.org:
+Check the current effective policy version:
 
 ```bash
-oc get configmap pi-sandbox-policy -n openshell-system -o json | \
-  python3 -c "
-import sys, json, yaml
-
-cm = json.load(sys.stdin)
-policy = yaml.safe_load(cm['data']['policy.yaml'])
-
-# Add pypi.org to network_policies (dict of named policies)
-np = policy.get('network_policies', {})
-if 'pypi_registry' not in np:
-    np['pypi_registry'] = {
-        'name': 'PyPI Registry',
-        'endpoints': [{'host': 'pypi.org', 'port': 443}],
-        'binaries': [{'path': '/usr/bin/pip'}, {'path': '/usr/bin/python3'}, {'path': '/usr/bin/curl'}]
-    }
-    policy['network_policies'] = np
-    cm['data']['policy.yaml'] = yaml.dump(policy, default_flow_style=False)
-    print(json.dumps(cm))
-else:
-    print(json.dumps(cm))
-" | oc apply -f -
+openshell policy get pi-agent-demo
 ```
 
-**Why:** This adds `pypi.org:443` to the `network_policies` dict in the policy ConfigMap. The script targets the `policy.yaml` key specifically, adds a new `pypi_registry` entry with allowed binaries, and applies the update.
+Expected:
 
-## Step 3 — Trigger Policy Reload
+```
+Version:      2
+Hash:         ...
+Status:       Effective
+Source:       sandbox
+```
 
-The policy ConfigMap change does not automatically reload. Stop and restart the sandbox to pick up the new policy:
+## Step 3 — Add pypi.org to the Policy
+
+Use the `openshell policy update` command to add the endpoint live:
 
 ```bash
-openshell sandbox stop pi-agent-demo
-openshell sandbox start pi-agent-demo
+openshell policy update pi-agent-demo \
+  --add-endpoint "pypi.org:443:read-write" \
+  --binary /usr/bin/curl \
+  --wait
 ```
 
-**Why:** OpenShell reads the policy at sandbox startup. To apply a ConfigMap change, the sandbox must be stopped and started. This is a deliberate design choice — policy changes are auditable events, not silent background updates.
+Expected:
 
-Wait for the sandbox to be ready again:
-
-```bash
-openshell sandbox list
+```
+✓ Policy version 3 submitted (hash: ...)
+✓ Policy version 3 loaded (active version: 3)
 ```
 
-Wait until `PHASE` shows `Ready`.
+**Why:** `--add-endpoint` adds `pypi.org:443` to the network allowlist with `read-write` access. `--binary /usr/bin/curl` restricts which binaries can reach it. `--wait` blocks until the sandbox has loaded the new policy version. No restart is needed — the policy is applied live.
 
 ## Step 4 — Verify pypi.org Is Now Allowed
 
@@ -116,53 +96,61 @@ Expected:
 HTTP 200
 ```
 
-✅ `pypi.org` is now allowed! The agent can install Python packages.
-
-## Step 5 — Test Python Package Installation
-
-```bash
-pip install requests 2>&1 | tail -3
-```
-
-Expected:
-
-```
-Successfully installed requests-x.x.x ...
-```
+✅ `pypi.org` is now allowed! The connection succeeds immediately.
 
 ```bash
 exit
 ```
 
-## Policy Change Flow
-
-The update is a three-step process: **edit → stop/start → verify**.
-
-| Step | Command | What Happens |
-|------|---------|-------------|
-| **Edit** | `oc edit configmap pi-sandbox-policy` | Add `pypi.org` to the network allowlist |
-| **Stop/Start** | `openshell sandbox stop` then `start` | Gateway stops old sandbox, reads new ConfigMap, starts fresh sandbox with updated policy |
-| **Verify** | `curl https://pypi.org` inside sandbox | Connection succeeds — pypi.org is now reachable |
-
-## Step 6 — Revert the Policy (Optional)
+## Step 5 — Revert the Policy (Optional)
 
 To remove the pypi.org entry and restore the original policy:
 
 ```bash
-oc apply -f /tmp/policy-backup.yaml
-openshell sandbox stop pi-agent-demo
-openshell sandbox start pi-agent-demo
+openshell policy update pi-agent-demo \
+  --remove-endpoint pypi.org:443 \
+  --wait
 ```
+
+Expected:
+
+```
+✓ Policy version 4 submitted (hash: ...)
+✓ Policy version 4 loaded (active version: 4)
+```
+
+Verify pypi.org is blocked again:
+
+```bash
+openshell sandbox exec pi-agent-demo -- bash -c "curl -v --max-time 5 https://pypi.org 2>&1 | tail -3"
+```
+
+Expected:
+
+```
+curl: (7) Failed to connect to pypi.org port 443 ...
+```
+
+❌ Blocked again — the revert took effect immediately.
+
+## Policy Change Flow
+
+| Step | Command | What Happens |
+|------|---------|-------------|
+| **View** | `openshell policy get pi-agent-demo` | Shows current policy version and hash |
+| **Add** | `openshell policy update --add-endpoint ... --wait` | Adds endpoint to the live sandbox policy, waits for it to load |
+| **Remove** | `openshell policy update --remove-endpoint ... --wait` | Removes endpoint from the live sandbox policy |
+| **Full replace** | `openshell policy set pi-agent-demo --policy policy.yaml` | Replaces the entire policy from a file |
 
 ## Key Takeaways
 
 | Aspect | Detail |
 |--------|--------|
-| Policy storage | Kubernetes ConfigMap — GitOps-friendly |
-| Policy format | YAML — human-readable, auditable |
-| Update mechanism | Edit ConfigMap → stop/start sandbox |
-| Audit trail | ConfigMap changes are logged by the K8s API audit log |
-| No downtime | Sandbox restarts in seconds |
+| Policy storage | Gateway-managed, versioned per sandbox |
+| Update mechanism | `openshell policy update` — live, no restart |
+| Audit trail | Every update creates a new version with a hash |
+| Rollback | Use `--remove-endpoint` to revert individual changes |
+| No downtime | Policy loads in seconds without stopping the sandbox |
 
 ## Next Step
 
