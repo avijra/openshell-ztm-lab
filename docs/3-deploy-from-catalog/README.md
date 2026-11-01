@@ -1,10 +1,12 @@
 # Deploy from the OpenShift Developer Catalog
 
-In this module you will install the OpenShell Zero Trust Demo as a Helm chart directly from the OpenShift Console — no CLI or YAML editing required.
+In this module you will install OpenShell as a **Helm chart** directly from the OpenShift Console — or via the CLI. Either way, it's a one-step deployment that creates everything: the Gateway, the Supervisor, the sandbox, and all the ZTVP integrations.
+
+> **What is Helm?** Helm is a package manager for Kubernetes — think of it like `apt` or `brew`, but for cluster applications. A Helm "chart" bundles all the Kubernetes resources (Deployments, Services, ConfigMaps, etc.) needed to run an application. Instead of applying 15 YAML files one by one, you install one chart and everything is created in the right order.
 
 ## How It Works
 
-The Helm chart is hosted on GitHub Pages and registered in the cluster as a `HelmChartRepository` custom resource. This makes it appear in the OpenShift Developer Catalog alongside other charts.
+The Helm chart is hosted on **GitHub Pages** (a static file server) and registered in the cluster as a `HelmChartRepository` custom resource. This makes it appear in the OpenShift **Developer Catalog** — a visual marketplace of installable applications.
 
 ```mermaid
 graph TD
@@ -15,6 +17,16 @@ graph TD
     C -->|"post-install hook"| F["Sandbox Create Job<br/>creates pi-agent-demo sandbox"]
 ```
 
+**Reading the diagram:**
+1. A `HelmChartRepository` CR tells OpenShift "there's a Helm repo at this URL"
+2. The OpenShift Console discovers the chart and shows it in the Developer Catalog
+3. When you click Install, the Helm engine runs three phases in order:
+   - **Pre-install hook**: A Job that stores your DeepSeek API key in Vault *before* anything else starts
+   - **Main resources**: The Gateway, Supervisor, Route, and ConfigMaps
+   - **Post-install hook**: A Job that creates the sandbox, imports the DeepSeek provider, and configures Pi
+
+> **What are Helm hooks?** Hooks are Kubernetes Jobs that run at specific lifecycle points (pre-install, post-install, pre-delete, etc.). They're perfect for setup/teardown tasks that must happen in a specific order. In our case, the API key *must* be in Vault before the Gateway tries to read it.
+
 ## Step 1 — Register the Chart Repository
 
 The chart repository must be registered once per cluster. SSH to the bastion and run:
@@ -23,7 +35,7 @@ The chart repository must be registered once per cluster. SSH to the bastion and
 ssh rosa@<BASTION_HOST>
 ```
 
-Apply the `HelmChartRepository` custom resource. This tells OpenShift where to find the chart:
+Apply the `HelmChartRepository` custom resource:
 
 ```bash
 cat <<'EOF' | oc apply -f -
@@ -38,7 +50,7 @@ spec:
 EOF
 ```
 
-**Why:** OpenShift only shows Helm charts in the Developer Catalog if a `HelmChartRepository` resource points to a valid Helm repo (a URL serving `index.yaml`). Without this CR, the chart would not appear.
+> **What does this do?** This creates a Kubernetes custom resource that tells OpenShift: "There is a Helm chart repository at `https://avijra.github.io/openshell-ztm-demo-chart/`. Please check its `index.yaml` file and show any charts you find in the Developer Catalog." Without this CR, the chart would be invisible to the Console.
 
 Verify the CR was created:
 
@@ -55,13 +67,13 @@ openshell-ztm-demo    5s
 
 ## Step 2 — Open the Developer Catalog
 
-1. Open the OpenShift Console in your browser:
+1. Open the **OpenShift Console** in your browser:
 
    ```
    https://console-openshift-console.<CLUSTER_DOMAIN>
    ```
 
-2. Switch to the **Developer** perspective (top-left dropdown)
+2. Switch to the **Developer** perspective (top-left dropdown — it might say "Administrator" by default)
 
 3. Click **+Add** in the left sidebar
 
@@ -69,7 +81,9 @@ openshell-ztm-demo    5s
 
 5. In the search bar, type **openshell**
 
-6. You should see the **OpenShell ZTM Demo** chart with the NVIDIA OpenShell logo
+6. You should see the **OpenShell ZTM Demo** chart tile
+
+> **What is the Developer Catalog?** It's a visual interface in OpenShift where developers can browse and install pre-packaged applications. Think of it like an app store for your cluster. Charts, Operators, and templates all appear here.
 
 ## Step 3 — Install the Chart
 
@@ -77,45 +91,69 @@ openshell-ztm-demo    5s
 
 2. Click **Install Helm Chart**
 
-3. Switch to **Form view** (the UI form, not YAML)
+3. Switch to **Form view** (the UI form, not raw YAML)
 
 4. Fill in the form:
 
    | Field | Value | Why |
    |-------|-------|-----|
-   | **Release Name** | `openshell-ztm-demo` | Identifies this Helm release |
-   | **Namespace** | `openshell-system` | The chart creates this namespace |
-   | **DeepSeek > Enabled** | ✅ checked | Enable the DeepSeek LLM provider |
-   | **DeepSeek > API Key** | `<DEEPSEEK_API_KEY>` | Your personal DeepSeek key |
-   | **Vault > Enabled** | ✅ checked | Store API key in Vault (ZTVP integration) |
+   | **Release Name** | `openshell-ztm-demo` | A unique name for this installation. Helm uses it to track what it created. |
+   | **Namespace** | `openshell-system` | A dedicated Kubernetes namespace to isolate OpenShell from other workloads |
+   | **DeepSeek > Enabled** | ✅ checked | Enable the DeepSeek LLM provider so Pi can generate code |
+   | **DeepSeek > API Key** | `<DEEPSEEK_API_KEY>` | Your personal DeepSeek key — it will be stored in Vault, not as plain text |
+   | **Vault > Enabled** | ✅ checked | Store the API key in Vault (ZTVP integration) instead of just a K8s Secret |
 
    Leave all other fields at their defaults.
 
 5. Click **Install**
 
+> **Prefer CLI?** You can also install from the bastion with:
+> ```bash
+> helm repo add openshell-ztm-demo https://avijra.github.io/openshell-ztm-demo-chart/
+> helm install openshell-ztm-demo openshell-ztm-demo/openshell-ztm-demo \
+>   -n openshell-system --create-namespace \
+>   --set deepseek.enabled=true \
+>   --set deepseek.apiKey=<DEEPSEEK_API_KEY> \
+>   --set vault.enabled=true \
+>   --set clusterDomain=<CLUSTER_DOMAIN>
+> ```
+
 ## Step 4 — Watch the Deployment
 
-The installation takes 2–3 minutes. During this time:
+The installation takes 1–2 minutes. During this time, three things happen in order:
 
-1. **Pre-install hooks run first:**
-   - A Kubernetes Job seeds your DeepSeek API key into Vault at path `secret/data/openshell/deepseek-api-key`
-   - This happens before any OpenShell pods start
+**Phase 1: Pre-install hooks run first**
 
-2. **Main resources deploy:**
-   - OpenShell Gateway (Deployment + Service + Route)
-   - OpenShell Supervisor (StatefulSet)
-   - Agent Sandbox CRD
+A Kubernetes Job called `vault-seed-deepseek` starts. It:
+- Authenticates to Vault using the Kubernetes auth method (path `hub/`)
+- Writes your DeepSeek API key to Vault at path `hub/infra/openshell/deepseek`
+- Also creates a Kubernetes Secret as a fallback
 
-3. **Post-install hook runs last:**
-   - A Kubernetes Job creates the `pi-agent-demo` sandbox
-   - It imports the DeepSeek provider profile
-   - It registers the DeepSeek provider with the credential from Vault
+This happens *before* any OpenShell pods start, ensuring the key is in Vault when the Gateway needs it.
+
+**Phase 2: Main resources deploy**
+
+- **OpenShell Gateway** (StatefulSet) — the gRPC API server that receives CLI commands
+- **Supervisor** — monitors the sandbox and enforces the boundary policy
+- **Route** — an OpenShift Route that exposes the Gateway over HTTPS
+- **Policy ConfigMap** — the zero-trust network + filesystem rules
+
+> **What is a StatefulSet?** Unlike a Deployment (which creates interchangeable pods), a StatefulSet gives each pod a stable identity and persistent storage. The Gateway is a StatefulSet because it maintains state about sandboxes and providers.
+
+**Phase 3: Post-install hook runs last**
+
+A Job called `pi-sandbox-setup` starts. It:
+- Creates the `pi-agent-demo` sandbox (a container with Pi v1.4.0 and Node.js 22)
+- Imports the DeepSeek provider profile (tells Pi how to talk to DeepSeek)
+- Registers the DeepSeek provider with the credential from Vault
 
 Watch the pods come up from the bastion:
 
 ```bash
 oc get pods -n openshell-system -w
 ```
+
+> **The `-w` flag** means "watch" — the output updates in real-time as pods change status. Press `Ctrl+C` to stop watching.
 
 Wait until you see all pods in `Running` state and the setup job in `Completed`:
 
@@ -127,14 +165,14 @@ os-supervisor-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   1/1     Running     0      
 pi-sandbox-setup-1-xxxxx                             0/1     Completed   0          1m
 ```
 
-Press `Ctrl+C` to stop watching.
+**Understanding each pod:**
 
-| Pod | Role |
-|-----|------|
-| `openshell-ztm-demo-0` | Gateway (StatefulSet) — gRPC API, policy engine |
-| `os-supervisor-*` | Supervisor — boundary enforcement |
-| `default--pi-agent-demo` | Sandbox — where Pi runs |
-| `pi-sandbox-setup-1-*` | Setup Job — creates sandbox, imports provider |
+| Pod | What it is | Why it matters |
+|-----|-----------|----------------|
+| `openshell-ztm-demo-0` | **Gateway** (StatefulSet, hence the `-0` suffix) | The brain — receives your CLI commands, manages sandboxes, resolves credentials |
+| `os-supervisor-*` | **Supervisor** | Runs *outside* the sandbox, enforces the network boundary. If the sandbox tries to reach google.com, the Supervisor blocks it. |
+| `default--pi-agent-demo` | **Sandbox** | Where Pi lives and runs. The `default--` prefix means it's in the `default` workspace. |
+| `pi-sandbox-setup-1-*` | **Setup Job** (completed) | One-time job that created the sandbox and configured the provider. `Completed` means it finished successfully. |
 
 ## Step 5 — Verify the Sandbox
 
@@ -151,7 +189,7 @@ NAME                     READY   STATUS    RESTARTS   AGE
 default--pi-agent-demo   1/1     Running   0          2m
 ```
 
-**Why:** The sandbox runs as a regular pod managed by the OpenShell Gateway. The `Running` status means the Gateway has provisioned the sandbox, the Supervisor is connected, and the zero-trust policy is enforced.
+> **What does `1/1 Running` mean?** The pod has 1 container requested and 1 container running. `Running` means the Gateway has provisioned the sandbox, the Supervisor is connected, and the zero-trust policy is actively enforced. The agent is ready to accept commands.
 
 ## What Just Happened
 
@@ -182,15 +220,15 @@ graph TD
     style main fill:#f0f0f0,color:#333
 ```
 
-| Resource | Purpose |
-|----------|---------|
-| **Namespace** | Dedicated namespace isolating OpenShell from other workloads |
-| **Gateway** | gRPC API server, credential resolver, policy engine |
-| **Supervisor** | Monitors sandbox lifecycle, enforces boundary |
-| **Route** | TLS-terminated ingress for the Gateway gRPC endpoint |
-| **Policy ConfigMap** | Zero-trust network + filesystem rules |
-| **Vault Seed Job** | Stores the DeepSeek API key in Vault before anything else starts |
-| **Sandbox Create Job** | Creates the sandbox, imports Pi, configures the provider |
+| Resource | What it is | Why it exists |
+|----------|-----------|--------------|
+| **Namespace** | `openshell-system` | Isolates all OpenShell resources from the rest of the cluster |
+| **Gateway** | StatefulSet + Service | The API server that manages everything. It speaks gRPC, resolves credentials, and stores sandbox state. |
+| **Supervisor** | Pod managed by Gateway | Sits between the Gateway and the Sandbox. Enforces the network boundary — every outbound request from the sandbox passes through the Supervisor first. |
+| **Route** | OpenShift Route (HTTPS) | Exposes the Gateway to the outside world. The OpenShell CLI connects to this URL. |
+| **Policy ConfigMap** | YAML configuration | Contains the network rules (which hosts are allowed) and filesystem rules (which paths are accessible). This is the "policy" that defines what the agent can and cannot do. |
+| **Vault Seed Job** | Pre-install hook Job | Stores your DeepSeek API key in Vault before anything else starts. Runs once and completes. |
+| **Sandbox Create Job** | Post-install hook Job | Creates the `pi-agent-demo` sandbox, imports the DeepSeek provider profile, and registers the credential. Runs once and completes. |
 
 ## Troubleshooting
 
@@ -208,11 +246,13 @@ curl -s -o /dev/null -w "%{http_code}" https://avijra.github.io/openshell-ztm-de
 
 **Pods stuck in Pending?**
 
-Check for resource quota or node capacity issues:
+This usually means the cluster doesn't have enough CPU/memory. Check:
 
 ```bash
 oc describe pod -n openshell-system -l app=openshell-gateway
 ```
+
+Look for `Events` at the bottom — they'll tell you if the scheduler can't find a node.
 
 **Vault seed job failed?**
 
@@ -220,10 +260,10 @@ oc describe pod -n openshell-system -l app=openshell-gateway
 oc logs -n openshell-system job/vault-seed-deepseek-1
 ```
 
-Common cause: Vault is sealed or the auth path is wrong. The job uses Kubernetes auth at path `hub/`.
+Common cause: Vault is sealed or the Kubernetes auth path is wrong. The job authenticates to Vault using the `hub/` auth path.
 
 ## Next Step
 
-The chart is deployed and the sandbox is running. Next, you'll configure the OpenShell CLI on the bastion to interact with it.
+The chart is deployed and the sandbox is running. Next, you'll configure the OpenShell CLI on the bastion so you can interact with the sandbox.
 
 Proceed to: **Client Setup** →

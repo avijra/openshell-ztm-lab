@@ -1,18 +1,22 @@
 # AI Agent Coding with Pi + DeepSeek
 
-In this module you will use the Pi coding agent inside the sandbox to write, run, and test real code — powered by DeepSeek LLM.
+In this module you will watch the Pi coding agent **write, run, and test real code** inside the sandbox — powered by the DeepSeek LLM. This is the "wow" moment that shows what AI agents can do.
 
 ## What Is Pi?
 
-**Pi** is NVIDIA's agentic coding assistant (Rust binary, v1.4.0). It:
+**Pi** is NVIDIA's agentic coding assistant. Unlike ChatGPT or Copilot (which *suggest* code), Pi is **agentic** — it takes action:
 
-- Takes natural language prompts
-- Calls a configured LLM (DeepSeek) for code generation
-- Writes files to disk
-- Runs the generated code
-- Iterates on errors until the code works
+| Capability | What it means |
+|-----------|--------------|
+| **Code generation** | Pi sends your prompt to DeepSeek LLM, which returns generated code |
+| **File creation** | Pi writes the generated code to actual files on disk |
+| **Dependency installation** | Pi runs `npm install` to fetch packages from the npm registry |
+| **Code execution** | Pi runs the generated code with Node.js and shows you the output |
+| **Error recovery** | If the code fails, Pi reads the error, asks DeepSeek for a fix, and tries again |
 
-Pi runs **entirely inside the OpenShell sandbox**. Every network call it makes (to DeepSeek, to npm) goes through the OpenShell boundary, which enforces the zero-trust policy.
+Pi is a Rust binary (v1.4.0) that runs entirely inside the OpenShell sandbox. Every network call it makes — to DeepSeek for code generation, to npm for packages — goes through the OpenShell boundary, which enforces the zero-trust policy.
+
+> **What makes an agent different from a chatbot?** A chatbot generates text. An agent generates text *and takes actions*. Pi doesn't just suggest `npm install express` — it actually runs the command, handles errors, and verifies the result. This is why security matters: the agent has real capabilities, so we need real constraints.
 
 ## Step 1 — Enter the Sandbox
 
@@ -22,9 +26,15 @@ From the bastion, open a shell inside the sandbox:
 openshell sandbox exec pi-agent-demo -- bash
 ```
 
-**Why:** `sandbox exec` runs a command inside the sandbox container, similar to `kubectl exec`. The `--` separates OpenShell flags from the command to run. You are now inside the sandboxed environment.
+> **What does this command do?**
+> - `openshell sandbox exec` — execute a command inside a sandbox (similar to `kubectl exec`)
+> - `pi-agent-demo` — the name of the sandbox (created by the Helm chart)
+> - `--` — separator between OpenShell flags and the command to run
+> - `bash` — open an interactive Bash shell inside the sandbox
+>
+> You are now **inside the sandbox**. Your prompt changes. Everything you type runs inside the sandboxed container, subject to the zero-trust policy.
 
-You should see a prompt inside the sandbox. Verify Pi is available:
+Verify Pi is available:
 
 ```bash
 pi --version
@@ -44,21 +54,24 @@ Ask Pi to write a "Hello World" in Node.js:
 pi -p "Create a Node.js script that prints Hello from the Zero Trust sandbox"
 ```
 
-**Why:** The `-p` flag sends a one-shot prompt to Pi. Pi will:
-1. Call DeepSeek to generate the code
-2. Write it to a file (e.g., `hello.js`)
-3. Run it with `node`
-4. Show you the output
+> **What does `-p` do?** The `-p` flag sends a one-shot prompt to Pi. Pi will:
+> 1. Send your prompt to the **DeepSeek API** (the LLM) for code generation
+> 2. Receive the generated code back
+> 3. Write it to a file (e.g., `hello.js`)
+> 4. Execute it with `node hello.js`
+> 5. Show you the output
+>
+> All of this happens autonomously. You'll see Pi's thought process and actions in real time.
 
 Expected behavior:
 
 ```
-🤖 Writing hello.js...
-📝 Running: node hello.js
+Created `/sandbox/hello.js` and verified it runs:
+
 Hello from the Zero Trust sandbox
 ```
 
-> The exact output format varies, but you should see Pi writing a file and executing it successfully.
+> The exact output format varies, but you should see Pi writing a file and executing it successfully. **This is an AI agent in action** — it didn't just suggest code, it wrote it, ran it, and verified it works.
 
 ## Step 3 — Complex Prompt: REST API
 
@@ -68,21 +81,17 @@ Now ask Pi to build something more substantial:
 pi -p "Create an Express.js REST API with these endpoints: GET /health returns {status: ok}, GET /items returns a list of 3 sample items, POST /items adds an item. Include error handling. Test it with curl."
 ```
 
-**Why:** This demonstrates Pi's agentic capabilities — it will:
+**Watch what happens.** Pi will autonomously:
+
 1. **Plan** the implementation
-2. **Install dependencies** (`npm install express`) — network access to `registry.npmjs.org` is allowed by policy
-3. **Write** the server code
-4. **Start** the server
-5. **Test** it with curl
-6. **Show** the results
+2. **Initialize** a Node.js project with `npm init`
+3. **Install dependencies** with `npm install express` — this downloads Express.js from `registry.npmjs.org`, which is allowed by the network policy
+4. **Write** the server code to a file
+5. **Start** the server in the background
+6. **Test** each endpoint with curl
+7. **Report** the results
 
-Watch as Pi:
-
-- Downloads Express via npm (allowed by network policy)
-- Creates the server file
-- Starts the server
-- Runs curl commands to test each endpoint
-- Shows you the passing results
+> **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, installing packages, testing — but fully autonomously. And critically, every network call (to DeepSeek for code, to npm for packages) was verified by the zero-trust boundary.
 
 ## What Happened Under the Hood
 
@@ -104,17 +113,17 @@ graph TD
     style S6 fill:#fff3cd,color:#856404
 ```
 
-Every outbound network request was checked by the boundary:
+**Notice the yellow boxes** — those are the boundary checks. Every time a process inside the sandbox makes a network request, the Supervisor intercepts it and checks the policy:
 
-| Request | Destination | Policy | Result |
-|---------|-------------|--------|--------|
-| LLM inference | `api.deepseek.com` | ✅ Explicitly allowed | Forwarded |
-| npm install | `registry.npmjs.org` | ✅ Explicitly allowed | Forwarded |
-| localhost test | `127.0.0.1:3000` | ✅ Local (no boundary) | Direct |
+| Request | Destination | Boundary Decision | Result |
+|---------|-------------|-------------------|--------|
+| LLM inference | `api.deepseek.com` | ✅ In allowlist, `curl`/`node` are allowed binaries | Forwarded (with credential resolved) |
+| npm install | `registry.npmjs.org` | ✅ In allowlist, `npm`/`node` are allowed binaries | Forwarded |
+| curl localhost | `127.0.0.1:3000` | ✅ Localhost traffic doesn't leave the sandbox | Direct (no boundary) |
 
 ## Step 4 — Verify DeepSeek Credential Is Available
 
-While still inside the sandbox, check that the DeepSeek API key environment variable is set:
+While still inside the sandbox, check the DeepSeek API key environment variable:
 
 ```bash
 echo $DEEPSEEK_API_KEY | head -c 30
@@ -126,7 +135,7 @@ Expected (a resolver token, not the real key):
 openshell:resolve:env:v...
 ```
 
-**Why:** This confirms the DeepSeek credential was injected into the sandbox by the Helm chart's post-install hook. Pi automatically uses `$DEEPSEEK_API_KEY` when calling the DeepSeek provider.
+> **What is this?** This is a **resolver token** — an opaque string that looks like `openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY`. It is **not** your real DeepSeek API key (which starts with `sk-`). The real key never enters the sandbox. When Pi uses this token in an API call, the Boundary intercepts the request and swaps the token for the real key before forwarding it. We'll explore this in detail in the Credential Security module.
 
 ## Step 5 — Exit the Sandbox
 
@@ -138,15 +147,17 @@ You are back on the bastion.
 
 ## Key Takeaways
 
-| Observation | Significance |
-|-------------|-------------|
-| Pi wrote and ran real code | The agent has genuine capabilities inside the sandbox |
-| npm install worked | Network policy selectively allows package registries |
-| DeepSeek responded | Credential resolution happened transparently |
-| All inside a sandbox | The agent never touched the host, cluster, or other namespaces |
+| What you saw | Why it matters |
+|-------------|---------------|
+| Pi wrote and ran real code | The agent has genuine capabilities — it's not just a demo mockup |
+| npm install worked | The network policy selectively allows package registries. Pi can install dependencies, but only from approved sources. |
+| DeepSeek responded | Credential resolution happened transparently — Pi used a resolver token, the Boundary swapped it for the real key |
+| Everything inside a sandbox | The agent never touched the host, the cluster, or other namespaces. It lives in an isolated world. |
 
-## Next Step
+## The Big Question
 
-You've seen what the agent **can** do. Next, you'll see what it **cannot** do — the network zero-trust boundary.
+You've seen what the agent **can** do. But what about what it **cannot** do? What happens when Pi (or an attacker inside the sandbox) tries to reach Google, read system files, or steal the API key?
+
+That's what the next three modules prove.
 
 Proceed to: **Network Zero Trust** →

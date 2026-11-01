@@ -1,8 +1,14 @@
 # Architecture
 
-## Overall System Architecture
+Before we start deploying, let's understand how all the pieces fit together. This module is **read-only** — no commands to run, just context that will make every later step make sense.
 
-The demo runs on a ROSA cluster with the Zero Trust Validated Pattern (ZTVP) as the foundation. OpenShell is deployed as a Helm chart on top.
+## The Big Picture
+
+The demo runs on a **ROSA cluster** (Red Hat OpenShift on AWS) with two layers:
+
+1. **Foundation layer: ZTVP** — The Zero Trust Validated Pattern provides five security services (Vault, ESO, Keycloak, SPIFFE/SPIRE, ACS) that are already deployed and running. Think of ZTVP as the "security platform" that any application can plug into.
+
+2. **Application layer: OpenShell** — NVIDIA's AI agent framework, deployed as a Helm chart on top of ZTVP. OpenShell adds the sandbox, the policy engine, and the credential resolver.
 
 ```mermaid
 graph TB
@@ -30,9 +36,29 @@ graph TB
     ACS -.->|image scan| SB
 ```
 
+**Reading the diagram:**
+- The **User** (you, on the bastion) sends commands via the OpenShell CLI to the **Gateway**
+- The Gateway forwards to the **Supervisor**, which manages the **Sandbox** (where Pi runs)
+- The Sandbox can reach **DeepSeek** and **npm** (green arrows) but **not** google.com (red X)
+- ZTVP components (dotted arrows) provide secrets, identity, and image scanning behind the scenes
+
+## What Is a "Sandbox"?
+
+In OpenShell, a **sandbox** is an isolated container where an AI agent runs. It's similar to a Kubernetes pod, but with extra security layers:
+
+| Feature | Regular K8s Pod | OpenShell Sandbox |
+|---------|----------------|-------------------|
+| Network access | Unrestricted (unless NetworkPolicy) | **Default-deny** — only explicit allowlist |
+| Filesystem access | Full container filesystem | **Landlock LSM** — only listed paths |
+| Credentials | Mounted as env vars or files (real values) | **Resolver tokens** — real keys never enter |
+| Binary restrictions | None | Per-endpoint binary allowlists |
+| Policy updates | Requires pod restart | **Live updates** via CLI |
+
+The sandbox is where Pi lives. Everything Pi does — every file it writes, every network call it makes — is governed by the sandbox's policy.
+
 ## Request Flow
 
-When a user asks Pi to write code, the request passes through four layers before reaching the LLM.
+When you ask Pi to write code, here's what happens step by step:
 
 ```mermaid
 graph TD
@@ -54,13 +80,25 @@ graph TD
     style F fill:#d4edda,color:#155724
 ```
 
-**Key point:** The sandbox never sends the real API key. The Boundary intercepts the request, swaps the resolver token for the real key, and forwards it. The response travels back the same path.
+**Walking through it:**
+
+1. **You type a command** on the bastion: `openshell sandbox exec pi-agent-demo -- pi -p "Write code"`
+2. The CLI sends a **gRPC request** (a high-performance RPC protocol) over **TLS** (encrypted) to the Gateway
+3. The **Gateway** authenticates your request and finds the right sandbox
+4. The **Supervisor** — a process that runs *outside* the sandbox and monitors it — receives the command
+5. The Supervisor **executes** your command inside the sandbox. Pi starts running.
+6. Pi calls DeepSeek. The HTTPS request hits the **Boundary** (the Supervisor's network filter)
+7. The Boundary checks: "Is `api.deepseek.com` in the allowlist?" → **Yes**. It also swaps the resolver token for the real API key.
+8. The request reaches **DeepSeek**, which returns generated code
+9. The response flows back the same path to your terminal
+
+**The critical insight:** The sandbox never sends the real API key. The Boundary intercepts the request, swaps the resolver token for the real key, and forwards it. If the sandbox were compromised, the attacker would only have a useless token.
 
 ## Credential Flow
 
 API keys are **never visible** inside the sandbox. They pass through three phases:
 
-**Phase 1 — Install time** (Helm chart hooks)
+**Phase 1 — Install time** (when you install the Helm chart)
 
 ```mermaid
 graph LR
@@ -68,6 +106,8 @@ graph LR
     VJ -->|"stores key at"| V["🔐 Vault<br/>secret/openshell/deepseek-api-key"]
     VJ -->|"also creates"| KS["K8s Secret<br/>(fallback)"]
 ```
+
+Your API key goes into **Vault** (HashiCorp's secret management system) via a Kubernetes Job that runs before anything else starts. Vault encrypts it at rest and controls who can access it.
 
 **Phase 2 — Runtime sync** (ESO keeps secrets fresh)
 
@@ -77,6 +117,8 @@ graph LR
     ESO -->|"writes to"| KS["K8s Secret"]
     KS -->|"Gateway reads"| GW["Gateway<br/>registers credential<br/>with provider"]
 ```
+
+The **External Secrets Operator** (ESO) watches Vault and automatically syncs the key into a Kubernetes Secret. The Gateway reads this Secret and registers it as a "provider credential." This sync happens every hour, so if you rotate the key in Vault, it propagates automatically.
 
 **Phase 3 — Every API call** (Boundary resolves at the edge)
 
@@ -91,7 +133,9 @@ graph LR
     style DS fill:#d4edda,color:#155724
 ```
 
-> The sandbox **never** handles the real key. Even if compromised, the resolver token is useless outside the OpenShell boundary.
+When Pi makes an API call, the `Authorization` header contains a **resolver token** (like `openshell:resolve:env:v123_DEEPSEEK_API_KEY`). The Boundary intercepts this, looks up the real key, and replaces the token before the request leaves the cluster. The sandbox never touches the real key.
+
+> **Why this matters:** Even if an attacker compromises the sandbox, they get a resolver token that is (a) bound to a specific endpoint, (b) only resolvable inside the cluster boundary, and (c) useless anywhere else.
 
 ## Zero Trust Policy Enforcement
 
@@ -115,15 +159,40 @@ graph TD
     style FD fill:#f8d7da,color:#721c24
 ```
 
+**Two enforcement mechanisms work together:**
+
+1. **Network policy** (enforced by the Supervisor/Boundary): Controls which hosts the sandbox can reach, down to the specific binary making the call. This is *not* a Kubernetes NetworkPolicy — it's enforced by OpenShell at the process level.
+
+2. **Filesystem policy** (enforced by Landlock LSM): Controls which paths the sandbox can read/write. **Landlock** is a Linux kernel security module — it's enforced by the kernel itself, not by userspace code. This means even if the sandboxed process has root privileges, it *still* cannot access restricted paths.
+
 ## Components Summary
 
-| Component | Role | Namespace |
-|-----------|------|-----------|
-| **OpenShell Gateway** | gRPC API, policy engine, credential resolver | `openshell-system` |
-| **Supervisor** | Monitors sandbox, enforces boundary | `openshell-system` |
-| **Sandbox** | Isolated container running Pi agent | `openshell-system` |
-| **Vault** | Stores API keys, issues dynamic secrets | `vault` |
-| **ESO** | Syncs Vault secrets → K8s Secrets | `external-secrets-operator` |
-| **SPIFFE/SPIRE** | Issues cryptographic workload identities (SVIDs) | `zero-trust-workload-identity-manager` |
-| **ACS** | Scans container images for CVEs, enforces policies | `stackrox` |
-| **Keycloak** | SSO / OIDC identity provider | `keycloak-system` |
+| Component | What it is | Role in this demo | Namespace |
+|-----------|-----------|-------------------|-----------|
+| **OpenShell Gateway** | gRPC API server | Receives CLI commands, resolves credentials, applies policy | `openshell-system` |
+| **Supervisor** | Sidecar process | Runs outside the sandbox, enforces the network boundary, monitors the agent | `openshell-system` |
+| **Sandbox** | Isolated container | Where Pi runs — the agent's entire world | `openshell-system` |
+| **Vault** | Secret management (HashiCorp) | Stores and encrypts the DeepSeek API key | `vault` |
+| **ESO** | External Secrets Operator | Syncs secrets from Vault → Kubernetes Secrets automatically | `external-secrets-operator` |
+| **SPIFFE/SPIRE** | Workload identity framework | Issues cryptographic certificates (SVIDs) to prove workload identity | `zero-trust-workload-identity-manager` |
+| **ACS** | Advanced Cluster Security (StackRox) | Scans container images for CVEs, enforces security policies | `stackrox` |
+| **Keycloak** | Identity provider (SSO/OIDC) | Authenticates users, issues JWT tokens | `keycloak-system` |
+
+## What Makes This "Zero Trust"?
+
+Traditional security trusts the network perimeter. Zero Trust trusts nothing:
+
+| Traditional | Zero Trust (this lab) |
+|------------|----------------------|
+| "Inside the cluster = trusted" | Every request is verified |
+| Credentials in env vars | Credentials never enter the sandbox |
+| Network access: allow by default | Network access: deny by default |
+| Filesystem: full access | Filesystem: kernel-enforced allowlist |
+| Identity: "you're in the right namespace" | Identity: cryptographic SPIFFE certificates |
+| Image security: scan once at build | Image security: continuous scanning by ACS |
+
+## Next Step
+
+Now that you understand the architecture, let's verify your environment is ready.
+
+Proceed to: **Prerequisites** →

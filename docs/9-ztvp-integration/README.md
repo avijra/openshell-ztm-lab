@@ -1,10 +1,12 @@
 # ZTVP Integration
 
-In this module you will explore how the Zero Trust Validated Pattern components work together with OpenShell to form a defense-in-depth security architecture.
+In this module you will explore how the **Zero Trust Validated Pattern** components work together with OpenShell to form a **defense-in-depth** security architecture. Each component addresses a different attack vector — together, they create multiple layers that an attacker would need to penetrate simultaneously.
+
+> **What is defense-in-depth?** It's a security strategy where multiple independent layers protect the system. If one layer fails, the others still hold. Think of a castle with a moat, a wall, a gate, and armed guards — compromising any one layer doesn't give you full access.
 
 ## The Five Pillars
 
-The ZTVP provides five security capabilities that integrate with OpenShell:
+The ZTVP provides five security capabilities. OpenShell plugs into all of them:
 
 ```mermaid
 graph TB
@@ -34,13 +36,19 @@ graph TB
     style K fill:#fefcbf,color:#744210
 ```
 
+**Reading the diagram:** Each ZTVP component connects to OpenShell in a different way:
+- **Vault + ESO** → stores and syncs the DeepSeek API key to the Gateway
+- **SPIFFE/SPIRE** → gives the Gateway a cryptographic identity
+- **ACS** → scans the sandbox container image for vulnerabilities
+- **Keycloak** → authenticates users who access the Gateway
+
 ## Pillar 1: Vault — Secret Management
 
-Vault stores the DeepSeek API key. The Helm chart's pre-install hook seeds it automatically.
+> **What is Vault?** [HashiCorp Vault](https://www.vaultproject.io/) is a secret management system. It stores sensitive data (API keys, passwords, certificates) in encrypted storage with fine-grained access control. Instead of putting secrets in Kubernetes Secrets (which are base64-encoded, not encrypted), you put them in Vault where they're encrypted at rest, access-logged, and rotatable.
 
-### Verify the Secret Reached Vault
+The Helm chart's pre-install hook stores your DeepSeek API key in Vault automatically.
 
-The Helm chart stores the API key in Vault at path `hub/infra/openshell/deepseek`. You can confirm Vault is running:
+### Verify Vault Is Running
 
 ```bash
 oc get pods -n vault -l app.kubernetes.io/name=vault
@@ -53,14 +61,18 @@ NAME      READY   STATUS    RESTARTS   AGE
 vault-0   1/1     Running   0          ...
 ```
 
-You can also verify the ESO-synced K8s Secret exists (which proves Vault has the key):
+### Verify the Secret Chain Works
+
+You can verify the Vault → ESO → K8s Secret chain by checking the synced K8s Secret:
 
 ```bash
 oc get secret deepseek-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
 echo "..."
 ```
 
-This should print the first 10 characters of your DeepSeek key, confirming the Vault → ESO → K8s Secret chain works.
+This should print the first 10 characters of your DeepSeek key, confirming the entire chain works: Vault has the key → ESO synced it → it's available as a K8s Secret.
+
+> **Why only 10 characters?** We don't want to expose the full key in the terminal. The first 10 chars are enough to confirm it's the right key.
 
 ### The Vault Path
 
@@ -68,11 +80,11 @@ This should print the first 10 characters of your DeepSeek key, confirming the V
 |------|---------|
 | `hub/infra/openshell/deepseek` | DeepSeek API key (`api_key` field) |
 
-The Vault auth method is Kubernetes auth mounted at path `hub/`. The Helm chart's setup job authenticates using its ServiceAccount token to write the key.
+> **What does `hub/` mean?** The ZTVP configures Vault with a Kubernetes auth method mounted at path `hub/`. This means pods in the cluster can authenticate to Vault using their ServiceAccount tokens — no static credentials needed. The Helm chart's setup job uses this auth method to write the key.
 
 ## Pillar 2: External Secrets Operator — Secret Sync
 
-ESO watches `ExternalSecret` resources and syncs them from Vault to Kubernetes Secrets.
+> **What is ESO?** The [External Secrets Operator](https://external-secrets.io/) watches `ExternalSecret` custom resources and syncs them from external sources (Vault, AWS Secrets Manager, etc.) into Kubernetes Secrets. It's the bridge between "secrets stored in Vault" and "secrets available to pods."
 
 ### Verify the ExternalSecret
 
@@ -87,14 +99,13 @@ NAME                  STORETYPE            STORE           REFRESH INTERVAL   ST
 deepseek-api-key-es   ClusterSecretStore   vault-backend   1h                 SecretSynced   True
 ```
 
-### Verify the K8s Secret
-
-```bash
-oc get secret deepseek-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
-echo "..."
-```
-
-**Why:** This shows that ESO has successfully synced the key from Vault into a Kubernetes Secret. We only print the first 10 characters to confirm it's the right key without exposing the full value.
+> **Reading this output:**
+> - **NAME**: `deepseek-api-key-es` — the ExternalSecret resource created by the Helm chart
+> - **STORETYPE**: `ClusterSecretStore` — it uses a cluster-wide secret store (not namespace-scoped)
+> - **STORE**: `vault-backend` — the store is backed by Vault
+> - **REFRESH INTERVAL**: `1h` — ESO checks Vault for updates every hour
+> - **STATUS**: `SecretSynced` — the K8s Secret was successfully created/updated from Vault
+> - **READY**: `True` — everything is healthy
 
 ### How ESO Syncs
 
@@ -110,9 +121,13 @@ graph LR
     ESO -->|"creates/updates"| KS
 ```
 
+> **Why is this valuable?** If you rotate the API key in Vault, ESO will automatically sync the new value to the K8s Secret within 1 hour. The Gateway picks up the new secret, and Pi's next API call uses the new key — no redeployment needed.
+
 ## Pillar 3: SPIFFE/SPIRE — Workload Identity
 
-SPIFFE (Secure Production Identity Framework for Everyone) provides cryptographic identities to workloads. Each OpenShell component gets a **SVID** (SPIFFE Verifiable Identity Document) — an X.509 certificate proving its identity without shared secrets.
+> **What is SPIFFE?** [SPIFFE](https://spiffe.io/) (Secure Production Identity Framework for Everyone) is a standard for issuing cryptographic identities to workloads. Instead of saying "this pod is in namespace X, therefore it's trusted," SPIFFE says "this pod has a cryptographically signed certificate (called an SVID) that proves exactly who it is."
+
+> **What is SPIRE?** SPIRE is the reference implementation of SPIFFE. It runs as a DaemonSet (agent on every node) and issues SVIDs (SPIFFE Verifiable Identity Documents) — X.509 certificates that prove a workload's identity.
 
 ### Verify the SPIFFE Registration
 
@@ -126,27 +141,28 @@ Expected:
 openshell-gateway   ...
 ```
 
-**Why:** `ClusterSPIFFEID` resources tell SPIRE which SPIFFE IDs to issue to which pods. SPIRE runs in the `zero-trust-workload-identity-manager` namespace.
+> **What does this mean?** A `ClusterSPIFFEID` resource tells SPIRE: "Issue a SPIFFE identity to pods matching this selector." The `openshell-gateway` entry means SPIRE issues an SVID to the Gateway pod.
 
 ### What SPIFFE Provides
 
 | Property | Value |
 |----------|-------|
 | Identity format | `spiffe://cluster.local/ns/openshell-system/sa/openshell-ztm-demo` |
-| Certificate type | X.509 SVID |
-| Rotation | Automatic (SPIRE agent handles renewal) |
+| Certificate type | X.509 SVID (a standard TLS certificate with a SPIFFE ID) |
+| Rotation | Automatic — SPIRE rotates certificates before they expire |
 | Trust domain | `cluster.local` |
 
-SPIFFE ensures that the Gateway can prove its identity to other services without static credentials. This is foundational to zero trust: **identity is cryptographic, not network-based**.
+> **Why does this matter?** In zero trust, you can't assume "same network = trusted." SPIFFE gives each workload a cryptographic passport. The Gateway can prove to Vault, to Keycloak, or to any other service that it is who it claims to be — without shared secrets or static credentials.
 
 ## Pillar 4: ACS (StackRox) — Image Security
 
-Red Hat Advanced Cluster Security for Kubernetes (ACS) continuously scans container images for:
+> **What is ACS?** [Red Hat Advanced Cluster Security](https://www.redhat.com/en/technologies/cloud-computing/openshift/advanced-cluster-security-kubernetes) for Kubernetes (formerly StackRox) continuously scans container images and running deployments for security issues.
 
-- Known CVEs (Common Vulnerabilities and Exposures)
-- Sensitive data (embedded secrets, private keys)
-- Misconfigurations (running as root, writable filesystem)
-- Compliance violations (PCI-DSS, HIPAA, NIST)
+ACS scans for:
+- **Known CVEs** (Common Vulnerabilities and Exposures) — known bugs in libraries
+- **Sensitive data** — embedded secrets, private keys, passwords in the image
+- **Misconfigurations** — running as root, writable root filesystem, privilege escalation
+- **Compliance violations** — PCI-DSS, HIPAA, NIST standards
 
 ### Check the Sandbox Image Scan
 
@@ -164,18 +180,13 @@ Alternatively, from the bastion:
 oc get image-vulnerabilities -n openshell-system 2>/dev/null || echo "Check ACS Console for scan results"
 ```
 
-### What ACS Enforces
-
-| Check | OpenShell Sandbox |
-|-------|-------------------|
-| Critical CVEs | Scanned on every pull |
-| Run as root | Denied by policy |
-| Writable root filesystem | Controlled by Landlock |
-| Network exposure | Limited by OpenShell policy |
+> **Why is continuous scanning important?** A container image might be clean when you build it, but new CVEs are discovered daily. ACS continuously re-scans images against updated vulnerability databases. If a critical CVE is found in a library used by the sandbox image, ACS flags it immediately.
 
 ## Pillar 5: Keycloak — User Identity
 
-Keycloak provides SSO and OIDC for user authentication. The ZTVP deploys a `ztvp` realm with pre-configured clients.
+> **What is Keycloak?** [Keycloak](https://www.keycloak.org/) is an open-source identity and access management (IAM) system. It provides SSO (Single Sign-On), OIDC (OpenID Connect), and user federation. In this lab, Keycloak authenticates users who access the OpenShell Gateway.
+
+The ZTVP deploys a `ztvp` realm in Keycloak with pre-configured clients.
 
 ### Verify the Keycloak OIDC Client
 
@@ -209,7 +220,7 @@ Enabled: True
 Protocol: openid-connect
 ```
 
-**Why:** This confirms the `openshell-gateway` OIDC client exists in Keycloak's `ztvp` realm. The Gateway is configured to validate JWT tokens issued by this Keycloak realm.
+> **What does this prove?** The `openshell-gateway` OIDC client exists in Keycloak's `ztvp` realm. The Gateway is configured to validate JWT tokens issued by this Keycloak realm. In production, users would log in through Keycloak to get a JWT, and the Gateway would verify it before allowing access.
 
 ### Authentication Flow
 
@@ -224,22 +235,26 @@ graph TD
     U --> JWT --> REQ --> VAL --> OK
 ```
 
+> **What is a JWT?** A JSON Web Token is a signed, base64-encoded JSON document. Keycloak signs it with its private key. The Gateway verifies the signature with Keycloak's public key. If the signature is valid, the token hasn't been tampered with. JWTs contain claims like "who is this user," "what are they allowed to do," and "when does this token expire."
+
 ## Defense in Depth Summary
 
-Each ZTVP pillar addresses a different attack vector:
+Each pillar addresses a different attack vector. An attacker would need to defeat **all of them simultaneously** to fully compromise the system:
 
-| Attack | Mitigation | ZTVP Pillar |
+| Attack Vector | Mitigation | ZTVP Pillar |
 |--------|-----------|-------------|
-| Stolen API key | Key in Vault, resolver token in sandbox | Vault + ESO |
-| Impersonated workload | Cryptographic SPIFFE identity | SPIRE |
-| Vulnerable container image | Continuous CVE scanning | ACS |
-| Unauthorized user access | OIDC JWT validation | Keycloak |
-| Network exfiltration | Allowlist-only network policy | OpenShell |
-| Filesystem escape | Landlock LSM restrictions | OpenShell |
-| Credential leakage | Boundary resolver tokens | OpenShell |
+| Stolen API key | Key in Vault, resolver token in sandbox | **Vault + ESO** |
+| Impersonated workload | Cryptographic SPIFFE identity (X.509 SVID) | **SPIRE** |
+| Vulnerable container image | Continuous CVE scanning + admission control | **ACS** |
+| Unauthorized user access | OIDC JWT validation via Keycloak | **Keycloak** |
+| Network exfiltration | Allowlist-only network policy with binary enforcement | **OpenShell** |
+| Filesystem escape | Kernel-enforced Landlock LSM restrictions | **OpenShell** |
+| Credential leakage | Boundary resolver tokens (never expose real keys) | **OpenShell** |
+
+> **This is zero trust in action.** No single component is sufficient alone. Vault without network policy means keys are safe but data can be exfiltrated. Network policy without Landlock means you can't reach the internet but can modify local binaries. Each layer compensates for the others' blind spots.
 
 ## Next Step
 
-You've seen all five pillars of the ZTVP working with OpenShell. Next, you'll learn how to dynamically update the zero-trust policy.
+You've seen all five pillars of the ZTVP working with OpenShell. For the final demo, you'll **dynamically update** the zero-trust policy — adding a new allowed endpoint and watching it take effect live.
 
 Proceed to: **Dynamic Policy** →
