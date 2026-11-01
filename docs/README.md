@@ -6,7 +6,7 @@ Welcome to the hands-on demo lab for **NVIDIA OpenShell** running on Red Hat's *
 
 ## The Problem: AI Agents Are Powerful — and Dangerous
 
-AI coding agents like Pi (part of [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)) are revolutionizing software development. They can write code, install packages, call APIs, and run programs — all autonomously. But this power creates serious security risks:
+AI coding agents like NVIDIA Pi are revolutionizing software development. They can write code, install packages, call APIs, and run programs — all autonomously. But this power creates serious security risks:
 
 | What an unconstrained agent can do | Real-world risk |
 |-------------------------------------|-----------------|
