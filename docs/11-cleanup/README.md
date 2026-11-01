@@ -52,7 +52,37 @@ oc delete namespace openshell-system
 
 > **What are namespace finalizers?** When you delete a namespace, Kubernetes runs "finalizers" — cleanup hooks that ensure all resources inside are properly removed. If the namespace gets stuck in `Terminating` state, it usually means a finalizer is waiting for a resource to be cleaned up. In normal operation, this completes within 30 seconds.
 
-## Step 5 — Remove the HelmChartRepository (Optional)
+## Step 5 — Remove the Keycloak Demo User (Optional)
+
+If you completed the **User Authentication** module, you created a `demo-engineer` user in Keycloak. This user is **not** managed by the Helm chart, so it persists after uninstall. To remove it:
+
+```bash
+KEYCLOAK_URL=https://keycloak.<CLUSTER_DOMAIN>
+ADMIN_PASSWORD=$(oc get secret keycloak-admin-user -n keycloak-system -o jsonpath='{.data.password}' | base64 -d)
+
+ADMIN_TOKEN=$(curl -sk "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" \
+  -d "username=admin" \
+  -d "password=$ADMIN_PASSWORD" \
+  -d "grant_type=password" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+USER_ID=$(curl -sk "$KEYCLOAK_URL/admin/realms/ztvp/users?username=demo-engineer" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -c "import sys,json; u=json.load(sys.stdin); print(u[0]['id'] if u else '')")
+
+if [ -n "$USER_ID" ]; then
+  curl -sk -o /dev/null -w "Delete user: HTTP %{http_code}\n" -X DELETE \
+    "$KEYCLOAK_URL/admin/realms/ztvp/users/$USER_ID" \
+    -H "Authorization: Bearer $ADMIN_TOKEN"
+else
+  echo "No demo-engineer user found (already cleaned up or never created)"
+fi
+```
+
+Expected: `Delete user: HTTP 204`
+
+> **Why isn't this automatic?** The `demo-engineer` user was created manually via the Keycloak Admin API in Module 9a — not by the Helm chart. Helm only manages resources it creates. The `openshell-gateway` OIDC client *is* cleaned up automatically (it was created by a `KeycloakRealmImport` CR in the chart), but manually-created users need manual deletion.
+
+## Step 6 — Remove the HelmChartRepository (Optional)
 
 If you no longer want the chart in the Developer Catalog:
 
@@ -71,7 +101,9 @@ oc delete helmchartrepository openshell-ztm-demo
 | OpenShell Supervisor | ❌ Removed | Deleted with the release |
 | Sandbox (Pi agent) | ❌ Removed | Deleted with the release |
 | Vault secret | 🔒 Orphaned | Inaccessible without the namespace; will be overwritten on reinstall |
-| HelmChartRepository | Optional | Removed if Step 5 was done |
+| Keycloak `openshell-gateway` client | ❌ Removed | Helm uninstall deleted the `KeycloakRealmImport` CR |
+| Keycloak `demo-engineer` user | ⚠️ Persists | Removed if Step 5 was done; harmless if left |
+| HelmChartRepository | Optional | Removed if Step 6 was done |
 
 ## Reinstalling
 
