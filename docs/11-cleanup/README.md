@@ -30,19 +30,15 @@ Expected: only the namespace remains (or a few lingering pods in `Terminating` s
 No resources found in openshell-system namespace.
 ```
 
-## Step 3 — Clean Up the Vault Secret (Optional)
+## Step 3 — Vault Secret (No Action Needed)
 
-The API key stored in Vault persists after Helm uninstall. To remove it, use the Vault API from the bastion (the `vault` CLI is not installed):
+The API key stored in Vault at path `hub/infra/openshell/deepseek` persists after Helm uninstall. You do **not** need to clean it up:
 
-```bash
-VAULT_ADDR=https://vault-vault.<CLUSTER_DOMAIN>
-VAULT_TOKEN=$(oc get secret vault-init -n vault -o jsonpath='{.data.root_token}' | base64 -d)
+- If you reinstall the chart, the pre-install hook will **overwrite** the key with the new value
+- The key is only accessible via Kubernetes auth (path `hub/`), so it cannot be read without a valid ServiceAccount token in the `openshell-system` namespace (which was deleted)
+- The ZTVP Vault uses Kubernetes auth — there is no root token available from the bastion
 
-curl -sk -X DELETE "$VAULT_ADDR/v1/hub/infra/openshell/deepseek" \
-  -H "X-Vault-Token: $VAULT_TOKEN"
-```
-
-**Why:** Vault secrets are external to Kubernetes. `helm uninstall` does not touch them. The key is stored at Vault path `hub/infra/openshell/deepseek`. If you plan to reinstall, you can leave the key in Vault — the chart's pre-install hook will overwrite it with the new value.
+**Why leave it:** Vault secrets are external to Kubernetes. Cleaning them requires Vault admin access, which is managed by the ZTVP pattern. The key is effectively orphaned and inaccessible after the namespace is deleted.
 
 ## Step 4 — Remove the Namespace (Optional)
 
