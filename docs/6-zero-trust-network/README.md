@@ -67,7 +67,7 @@ openshell sandbox exec pi-agent-demo -- bash
 ## Step 2 — Test ALLOWED: MAAS API
 
 ```bash
-curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models -H "Authorization: Bearer $MAAS_API_KEY" | head -c 100
+curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models -H "Authorization: Bearer $MAAS_API_KEY" | head -c 200
 ```
 
 > **Breaking down this command:**
@@ -76,12 +76,12 @@ curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://maas-rhdp.apps.maas.redh
 > - `--max-time 5` — timeout after 5 seconds (so we don't wait forever for denied connections)
 > - `https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models` — the MAAS models endpoint (OpenAI-compatible API)
 > - `-H "Authorization: Bearer $MAAS_API_KEY"` — sends the resolver token as auth. The Boundary will swap it for the real key.
-> - `| head -c 100` — show only the first 100 characters (the full response is long)
+> - `| head -c 200` — show only the first 200 characters (the full response is long)
 
 Expected output (JSON key order may vary):
 
 ```
-{"data":[{"id":"gpt-oss-120b","object":"model","created":...,"owned_by":"openai"}],"object":"...
+{"data":[{"id":"gpt-oss-120b","object":"model","created":1677610602,"owned_by":"openai"}],"object":"list"}
 HTTP 200
 ```
 
