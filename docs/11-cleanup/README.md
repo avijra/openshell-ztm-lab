@@ -87,7 +87,7 @@ fi
 
 Expected: `Delete user: HTTP 204`
 
-> **Why isn't this automatic?** The `demo-engineer` user was created manually via the Keycloak Admin API in Module 9a — not by the Helm chart. Helm only manages resources it creates. The `openshell-gateway` OIDC client *is* cleaned up automatically (it was created by a `KeycloakRealmImport` CR in the chart), but manually-created users need manual deletion.
+> **Why isn't this automatic?** The `demo-engineer` user was created manually via the Keycloak Admin API in Module 9a — not by the Helm chart. Helm only manages resources it creates. The `openshell-gateway` OIDC client persists in Keycloak after uninstall — it was created by a post-install Job via the Keycloak Admin REST API. This is harmless: reinstalling the chart will update the existing client rather than creating a duplicate.
 
 ## Step 6 — Remove the HelmChartRepository (Optional)
 
@@ -108,7 +108,7 @@ oc delete helmchartrepository openshell-ztm-demo
 | OpenShell Supervisor | ❌ Removed | Deleted with the release |
 | Sandbox (Pi agent) | ❌ Removed | Deleted with the release |
 | Vault secret | 🔒 Orphaned | Inaccessible without the namespace; will be overwritten on reinstall |
-| Keycloak `openshell-gateway` client | ❌ Removed | Helm uninstall deleted the `KeycloakRealmImport` CR |
+| Keycloak `openshell-gateway` client | 🔒 Persists | Created by post-install Job via Admin API; harmless, updated on reinstall |
 | Keycloak `demo-engineer` user | ⚠️ Persists | Removed if Step 5 was done; harmless if left |
 | HelmChartRepository | Optional | Removed if Step 6 was done |
 

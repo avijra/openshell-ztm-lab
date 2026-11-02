@@ -172,6 +172,7 @@ Wait until you see all pods in `Running` state and the setup job in `Completed`:
 ```
 NAME                                                 READY   STATUS      RESTARTS   AGE
 default--pi-agent-demo                               1/1     Running     0          1m
+keycloak-client-setup-1-xxxxx                        0/1     Completed   0          1m
 openshell-ztm-demo-0                                 1/1     Running     0          1m
 os-supervisor-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   1/1     Running     0          1m
 pi-sandbox-setup-1-xxxxx                             0/1     Completed   0          1m
@@ -184,6 +185,7 @@ pi-sandbox-setup-1-xxxxx                             0/1     Completed   0      
 | `openshell-ztm-demo-0` | **Gateway** (StatefulSet, hence the `-0` suffix) | The brain — receives your CLI commands, manages sandboxes, resolves credentials |
 | `os-supervisor-*` | **Supervisor** | Runs *outside* the sandbox, enforces the network boundary. If the sandbox tries to reach google.com, the Supervisor blocks it. |
 | `default--pi-agent-demo` | **Sandbox** | Where Pi lives and runs. The `default--` prefix means it's in the `default` workspace. |
+| `keycloak-client-setup-1-*` | **Keycloak Client Job** (completed) | One-time job that creates or updates the `openshell-gateway` OIDC client in Keycloak via the Admin REST API. `Completed` means the client is configured. |
 | `pi-sandbox-setup-1-*` | **Setup Job** (completed) | One-time job that created the sandbox and configured the provider. `Completed` means it finished successfully. |
 
 ## Step 6 — Verify the Sandbox
