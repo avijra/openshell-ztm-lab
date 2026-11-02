@@ -66,17 +66,17 @@ pi -p "Create a Node.js script that prints Hello from the Zero Trust sandbox"
 Expected behavior — Pi creates a file and shows the code:
 
 ```
-The script helloZeroTrust.js has been created:
+The script hello.js has been created:
 ... (code shown) ...
-Run it with: node helloZeroTrust.js
+Run it with: node hello.js
 ```
 
-> **Note:** The exact filename varies (e.g., `hello.js`, `helloZeroTrust.js`). Pi chooses the name based on the prompt.
+> **Note:** The exact filename varies (e.g., `hello.js`, `helloZeroTrust.js`). Pi chooses the name based on the prompt. Use whatever filename Pi reported in the next command.
 
-You can verify it yourself (use the filename Pi reported):
+You can verify it yourself:
 
 ```bash
-node /sandbox/helloZeroTrust.js
+node /sandbox/hello.js
 ```
 
 ```
@@ -98,12 +98,12 @@ pi -p "Create an Express.js REST API with GET /health returning {status: ok}, GE
 **Watch what happens.** Pi will autonomously:
 
 1. **Generate** the server code via the MAAS LLM
-2. **Create** `package.json` and `server.js` files
+2. **Create** `package.json` and `index.js` files (sometimes `server.js`)
 3. **Report** the implementation with instructions to run it
 
 > **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, structuring a project — but fully autonomously. And critically, every network call (to MAAS for code generation) was verified by the zero-trust boundary.
 
-Now install dependencies and test the server. Follow the directory and filename that Pi reported (it may create `server.js` at `/sandbox` or `index.js` inside a subdirectory like `/sandbox/api`):
+Now install dependencies and test the server. Pi typically creates the files at `/sandbox` (your current directory):
 
 ```bash
 cd /sandbox && npm install
@@ -115,10 +115,10 @@ cd /sandbox && npm install
 added 65 packages ...
 ```
 
-Start the server and test each endpoint (use the filename Pi reported):
+Start the server and test each endpoint (use the filename Pi reported — usually `index.js`):
 
 ```bash
-node server.js &
+node index.js &
 ```
 
 ```
@@ -152,8 +152,10 @@ curl -s -X POST -H "Content-Type: application/json" -d '{"name":"New Item"}' htt
 Stop the server when done:
 
 ```bash
-kill %1
+pkill -f "node index.js" 2>/dev/null || true
 ```
+
+> **Why `pkill` instead of `kill %1`?** The sandbox security context may block the `kill` builtin from signaling backgrounded processes (`Operation not permitted`). `pkill -f` finds the process by command name and works reliably inside the sandbox. Alternatively, you can skip this step — the server stops automatically when you exit the sandbox.
 
 > **What just happened?** Pi generated a complete REST API with three endpoints, Express.js dependency management, and input validation — all from a single prompt. The npm install downloaded Express.js from `registry.npmjs.org`, which the network policy allows. Every outbound call went through the zero-trust boundary.
 
@@ -166,7 +168,7 @@ graph TD
     S1["1️⃣ Pi sends prompt to MAAS"]
     S2["🔒 Boundary checks: maas-rhdp.apps.maas.redhatworkshops.io in allowlist? ✅<br/>Resolves credential token → real API key"]
     S3["2️⃣ MAAS returns generated code"]
-    S4["3️⃣ Pi writes server.js to disk"]
+    S4["3️⃣ Pi writes index.js to disk"]
     S5["4️⃣ You run: npm install express"]
     S6["🔒 Boundary checks: registry.npmjs.org in allowlist? ✅"]
     S7["5️⃣ You start server, test with curl"]

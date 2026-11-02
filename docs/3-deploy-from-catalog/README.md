@@ -65,7 +65,17 @@ NAME                  AGE
 openshell-ztm-demo    5s
 ```
 
-## Step 2 — Open the Developer Catalog
+## Step 2 — Create the Namespace
+
+The Helm chart expects a dedicated namespace. Create it before installing from the Console:
+
+```bash
+oc create namespace openshell-system
+```
+
+> **Why create it first?** The CLI command (`helm install --create-namespace`) creates the namespace automatically, but the OpenShift Console form does not. Creating it upfront avoids install errors regardless of which method you use.
+
+## Step 3 — Open the Developer Catalog
 
 1. Open the **OpenShift Console** in your browser:
 
@@ -74,6 +84,8 @@ openshell-ztm-demo    5s
    ```
 
 2. Switch to the **Developer** perspective (top-left dropdown — it might say "Administrator" by default)
+
+   > **Developer perspective not visible?** On some OCP 4.14+ clusters, the Developer perspective is not enabled by default. To enable it: go to **Administration → Cluster Settings → Configuration → Console (operator.openshift.io)**, then under **Customization** ensure the Developer perspective is enabled. Alternatively, you can install entirely from the CLI (see the "Prefer CLI?" box in Step 4).
 
 3. Click **+Add** in the left sidebar
 
@@ -85,7 +97,7 @@ openshell-ztm-demo    5s
 
 > **What is the Developer Catalog?** It's a visual interface in OpenShift where developers can browse and install pre-packaged applications. Think of it like an app store for your cluster. Charts, Operators, and templates all appear here.
 
-## Step 3 — Install the Chart
+## Step 4 — Install the Chart
 
 1. Click the **OpenShell ZTM Demo** tile
 
@@ -98,7 +110,7 @@ openshell-ztm-demo    5s
    | Field | Value | Why |
    |-------|-------|-----|
    | **Release Name** | `openshell-ztm-demo` | A unique name for this installation. Helm uses it to track what it created. |
-   | **Namespace** | `openshell-system` | A dedicated Kubernetes namespace to isolate OpenShell from other workloads |
+   | **Namespace** | `openshell-system` | Select the namespace you created in Step 2 |
    | **MAAS > Enabled** | ✅ checked | Enable the MAAS LLM provider (gpt-oss-120b) so Pi can generate code |
    | **MAAS > API Key** | `<MAAS_API_KEY>` | Your personal MAAS key — it will be stored in Vault, not as plain text |
    | **Vault > Enabled** | ✅ checked | Store the API key in Vault (ZTVP integration) instead of just a K8s Secret |
@@ -107,7 +119,7 @@ openshell-ztm-demo    5s
 
 5. Click **Install**
 
-> **Prefer CLI?** You can also install from the bastion with:
+   > **Prefer CLI?** You can also install from the bastion with:
 > ```bash
 > helm repo add openshell-ztm-demo https://avijra.github.io/openshell-ztm-demo-chart/
 > helm install openshell-ztm-demo openshell-ztm-demo/openshell-ztm-demo \
@@ -116,8 +128,9 @@ openshell-ztm-demo    5s
 >   --set vault.enabled=true \
 >   --set global.clusterDomain=<CLUSTER_DOMAIN>
 > ```
+> The `--create-namespace` flag creates the namespace automatically, so you can skip Step 2 if using the CLI.
 
-## Step 4 — Watch the Deployment
+## Step 5 — Watch the Deployment
 
 The installation takes 1–2 minutes. During this time, three things happen in order:
 
@@ -173,7 +186,7 @@ pi-sandbox-setup-1-xxxxx                             0/1     Completed   0      
 | `default--pi-agent-demo` | **Sandbox** | Where Pi lives and runs. The `default--` prefix means it's in the `default` workspace. |
 | `pi-sandbox-setup-1-*` | **Setup Job** (completed) | One-time job that created the sandbox and configured the provider. `Completed` means it finished successfully. |
 
-## Step 5 — Verify the Sandbox
+## Step 6 — Verify the Sandbox
 
 Confirm the sandbox pod is running:
 
