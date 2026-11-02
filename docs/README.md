@@ -67,6 +67,7 @@ In this lab you will:
 | ZTVP Integration | 5 min | Explore Vault, SPIFFE, ACS, Keycloak, ESO |
 | User Authentication | 5 min | OIDC flow, JWT tokens, Keycloak login |
 | Dynamic Policy | 3 min | Update the policy live |
+| Cleanup | 2 min | Remove OpenShell from the cluster |
 | **Total** | **~45 min** | |
 
 ## Fill In Your Environment

@@ -95,8 +95,8 @@ oc get externalsecrets -n openshell-system
 Expected:
 
 ```
-NAME                  STORETYPE            STORE           REFRESH INTERVAL   STATUS         READY
-maas-api-key-es       ClusterSecretStore   vault-backend   1h                 SecretSynced   True
+NAME              STORETYPE            STORE           REFRESH INTERVAL   STATUS         READY   LAST SYNC
+maas-api-key-es   ClusterSecretStore   vault-backend   1h                 SecretSynced   True    ...
 ```
 
 > **Reading this output:**

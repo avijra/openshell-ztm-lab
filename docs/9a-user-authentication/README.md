@@ -140,17 +140,17 @@ Expected:
   "refresh_expires_in": 1800,
   "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6...",
   "token_type": "Bearer",
-  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
   "not-before-policy": 0,
   "session_state": "...",
-  ...
+  "scope": "profile email openid"
+}
 ```
 
 > **What's in this response?**
 > - **access_token** — the JWT that proves who you are. This is what gets sent to the Gateway.
 > - **expires_in: 300** — the access token expires in 5 minutes. Short-lived tokens limit damage if stolen.
 > - **refresh_token** — used to get a new access token without re-entering credentials. Lasts 30 minutes.
-> - **id_token** — contains user profile info (name, email). Used by the CLI for display purposes.
+> - **scope** — the granted scopes: `profile email openid`.
 > - **token_type: Bearer** — tells the client to send it as `Authorization: Bearer <token>`.
 
 ## Step 3 — Decode the JWT

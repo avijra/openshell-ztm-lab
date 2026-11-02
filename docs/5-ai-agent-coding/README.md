@@ -85,6 +85,8 @@ Hello from the Zero Trust sandbox
 
 > The exact output format varies by model. Pi may auto-execute the code or simply create the file and suggest how to run it. Either way, **this is an AI agent in action** — it generated real code via MAAS and wrote it to disk inside the sandbox.
 
+> **If Pi returns empty output**, the MAAS LLM occasionally returns an empty response. Simply run the same command again — it typically works on the next attempt.
+
 ## Step 3 — Complex Prompt: REST API
 
 Now ask Pi to build something more substantial:
@@ -101,17 +103,19 @@ pi -p "Create an Express.js REST API with GET /health returning {status: ok}, GE
 
 > **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, structuring a project — but fully autonomously. And critically, every network call (to MAAS for code generation) was verified by the zero-trust boundary.
 
-Now install dependencies and test the server:
+Now install dependencies and test the server. Follow the directory and filename that Pi reported (it may create `server.js` at `/sandbox` or `index.js` inside a subdirectory like `/sandbox/api`):
 
 ```bash
 cd /sandbox && npm install
 ```
 
+> **Note:** If Pi created files in a subdirectory (e.g., `/sandbox/api`), run `cd /sandbox/api && npm install` instead.
+
 ```
 added 65 packages ...
 ```
 
-Start the server and test each endpoint:
+Start the server and test each endpoint (use the filename Pi reported):
 
 ```bash
 node server.js &
