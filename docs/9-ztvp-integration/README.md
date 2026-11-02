@@ -172,7 +172,7 @@ Open ACS in your browser:
 https://central-stackrox.<CLUSTER_DOMAIN>
 ```
 
-Navigate to: **Vulnerability Management → Images** and search for `openshell`.
+Navigate to: **Vulnerability Management → Results** and search for `openshell`.
 
 Alternatively, from the bastion:
 
