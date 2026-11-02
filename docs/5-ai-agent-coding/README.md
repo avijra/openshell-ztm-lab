@@ -66,15 +66,17 @@ pi -p "Create a Node.js script that prints Hello from the Zero Trust sandbox"
 Expected behavior — Pi creates a file and shows the code:
 
 ```
-The script has been created as hello.js:
+The script helloZeroTrust.js has been created:
 ... (code shown) ...
-Run it with: node hello.js
+Run it with: node helloZeroTrust.js
 ```
 
-You can verify it yourself:
+> **Note:** The exact filename varies (e.g., `hello.js`, `helloZeroTrust.js`). Pi chooses the name based on the prompt.
+
+You can verify it yourself (use the filename Pi reported):
 
 ```bash
-node /sandbox/hello.js
+node /sandbox/helloZeroTrust.js
 ```
 
 ```
@@ -88,24 +90,72 @@ Hello from the Zero Trust sandbox
 Now ask Pi to build something more substantial:
 
 ```bash
-pi -p "Create an Express.js REST API with these endpoints: GET /health returns {status: ok}, GET /items returns a list of 3 sample items, POST /items adds an item. Include error handling. Test it with curl."
+pi -p "Create an Express.js REST API with GET /health returning {status: ok}, GET /items returning 3 sample items, and POST /items to add an item."
 ```
 
 **Watch what happens.** Pi will autonomously:
 
-1. **Plan** the implementation
-2. **Initialize** a Node.js project with `npm init`
-3. **Install dependencies** with `npm install express` — this downloads Express.js from `registry.npmjs.org`, which is allowed by the network policy
-4. **Write** the server code to a file
-5. **Start** the server in the background
-6. **Test** each endpoint with curl
-7. **Report** the results
+1. **Generate** the server code via the MAAS LLM
+2. **Create** `package.json` and `server.js` files
+3. **Report** the implementation with instructions to run it
 
-> **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, installing packages, testing — but fully autonomously. And critically, every network call (to MAAS for code, to npm for packages) was verified by the zero-trust boundary.
+> **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, structuring a project — but fully autonomously. And critically, every network call (to MAAS for code generation) was verified by the zero-trust boundary.
+
+Now install dependencies and test the server:
+
+```bash
+cd /sandbox && npm install
+```
+
+```
+added 65 packages ...
+```
+
+Start the server and test each endpoint:
+
+```bash
+node server.js &
+```
+
+```
+Server listening on port 3000
+```
+
+```bash
+curl -s http://localhost:3000/health
+```
+
+```json
+{"status":"ok"}
+```
+
+```bash
+curl -s http://localhost:3000/items
+```
+
+```json
+[{"id":1,"name":"Item One"},{"id":2,"name":"Item Two"},{"id":3,"name":"Item Three"}]
+```
+
+```bash
+curl -s -X POST -H "Content-Type: application/json" -d '{"name":"New Item"}' http://localhost:3000/items
+```
+
+```json
+{"id":4,"name":"New Item"}
+```
+
+Stop the server when done:
+
+```bash
+kill %1
+```
+
+> **What just happened?** Pi generated a complete REST API with three endpoints, Express.js dependency management, and input validation — all from a single prompt. The npm install downloaded Express.js from `registry.npmjs.org`, which the network policy allows. Every outbound call went through the zero-trust boundary.
 
 ## What Happened Under the Hood
 
-Pi performed these steps, and every outbound call went through the Boundary:
+Every outbound call went through the Boundary:
 
 ```mermaid
 graph TD
@@ -113,9 +163,9 @@ graph TD
     S2["🔒 Boundary checks: maas-rhdp.apps.maas.redhatworkshops.io in allowlist? ✅<br/>Resolves credential token → real API key"]
     S3["2️⃣ MAAS returns generated code"]
     S4["3️⃣ Pi writes server.js to disk"]
-    S5["4️⃣ Pi runs: npm install express"]
+    S5["4️⃣ You run: npm install express"]
     S6["🔒 Boundary checks: registry.npmjs.org in allowlist? ✅"]
-    S7["5️⃣ Pi starts server, tests with curl"]
+    S7["5️⃣ You start server, test with curl"]
 
     S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
 
