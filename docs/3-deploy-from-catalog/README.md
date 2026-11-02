@@ -196,7 +196,7 @@ Let's trace exactly what the chart created:
 
 ```mermaid
 graph TD
-    HC["Helm Chart v1.2.0"]
+    HC["Helm Chart v1.3.0"]
 
     subgraph hooks["Hook Jobs"]
         VJ["Pre-install:<br/>Vault Seed Job"]

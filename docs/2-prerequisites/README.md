@@ -90,7 +90,7 @@ cluster-admin
 If you see a login error, run:
 
 ```bash
-oc login https://api.rosa-wjw4q.8pwg.p3.openshiftapps.com:6443 --username cluster-admin --password <SSH_PASSWORD>
+oc login https://api.rosa-wjw4q.8pwg.p3.openshiftapps.com:443 --username cluster-admin --password <SSH_PASSWORD>
 ```
 
 ## Ready?
