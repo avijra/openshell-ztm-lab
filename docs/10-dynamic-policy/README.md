@@ -4,7 +4,7 @@ In this module you will update the zero-trust policy **live** — adding a new a
 
 ## Why Dynamic Policy?
 
-In the real world, AI agents need **evolving capabilities**. Today the agent only calls DeepSeek and npm. Tomorrow it might need to:
+In the real world, AI agents need **evolving capabilities**. Today the agent only calls MAAS and npm. Tomorrow it might need to:
 - Access a **new package registry** (PyPI for Python packages)
 - Call a **new API** (GitHub Actions, Jira, Slack)
 - Reach a **new data source** (S3 bucket, database endpoint)
@@ -19,7 +19,7 @@ Recall the current network policy from Module 6:
 
 | Host | Status | Why |
 |------|--------|-----|
-| `api.deepseek.com` | ✅ Allowed | LLM inference |
+| `maas-rhdp.apps.maas.redhatworkshops.io` | ✅ Allowed | LLM inference (MAAS) |
 | `registry.npmjs.org` | ✅ Allowed | npm packages |
 | `github.com` | ✅ Allowed | Code repos |
 | `pypi.org` | ❌ **Denied** | Not in the policy |

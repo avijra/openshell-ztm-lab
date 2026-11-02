@@ -36,7 +36,7 @@ No resources found in openshell-system namespace.
 
 ## Step 3 — Vault Secret (No Action Needed)
 
-The API key stored in Vault at path `hub/infra/openshell/deepseek` persists after Helm uninstall. You do **not** need to clean it up:
+The API key stored in Vault at path `hub/infra/openshell/maas` persists after Helm uninstall. You do **not** need to clean it up:
 
 - If you **reinstall** the chart, the pre-install hook will **overwrite** the key with the new value
 - The key is only accessible via Kubernetes auth (path `hub/`), so it cannot be read without a valid ServiceAccount token in the `openshell-system` namespace — which was just deleted
@@ -120,7 +120,7 @@ You have completed the **OpenShell on Zero Trust Demo Lab**. Here's everything y
 | Module | What you demonstrated |
 |--------|---------------------|
 | **Deploy from Catalog** | One-click deployment from the OpenShift Developer Catalog via Helm |
-| **AI Agent Coding** | Pi + DeepSeek wrote real code (Hello World + Express.js REST API) autonomously |
+| **AI Agent Coding** | Pi + MAAS (gpt-oss-120b) wrote real code (Hello World + Express.js REST API) autonomously |
 | **Network Zero Trust** | Only 3 hosts reachable; Google, example.com, and exfil servers instantly denied |
 | **Filesystem Zero Trust** | Only /sandbox and /tmp writable; /etc, /usr, / all locked by Landlock LSM |
 | **Credential Security** | Real API key never visible in sandbox — only resolver tokens that are useless outside the boundary |

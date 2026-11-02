@@ -34,7 +34,7 @@ In this lab, Zero Trust means:
 In this lab you will:
 
 1. **Deploy** an AI agent sandbox from the OpenShift Developer Catalog — one click
-2. **Run** the Pi coding agent powered by DeepSeek LLM inside a zero-trust sandbox
+2. **Run** the Pi coding agent powered by Red Hat MAAS (gpt-oss-120b) inside a zero-trust sandbox
 3. **Prove** that network access is restricted to only approved endpoints
 4. **Prove** that filesystem access is locked down by Landlock LSM (a Linux kernel security module)
 5. **Observe** that API credentials are never visible inside the sandbox
@@ -49,7 +49,8 @@ In this lab you will:
 | **ZTVP** | Zero Trust Validated Pattern — a curated set of security tools deployed together | Provides Vault, ESO, Keycloak, SPIFFE, and ACS |
 | **OpenShell** | NVIDIA's framework for running AI agents in secure sandboxes | Enforces network, filesystem, and credential policies |
 | **[Pi](https://pi.dev/)** | An agentic coding assistant by Earendil Inc. | The AI agent writing and running code inside the sandbox |
-| **DeepSeek** | A large language model (LLM) API | The "brain" that generates code when Pi asks for it |
+| **MAAS** | Red Hat Model-as-a-Service — an OpenAI-compatible LLM API running gpt-oss-120b | The "brain" that generates code when Pi asks for it (default provider) |
+| **DeepSeek** *(optional)* | A large language model (LLM) API | An optional additional LLM provider that can be enabled with `deepseek.enabled=true` |
 | **Landlock LSM** | A Linux kernel security module for filesystem restrictions | Enforces which files the agent can read/write — at the kernel level |
 | **Helm** | A package manager for Kubernetes | How we deploy OpenShell in one click from the OpenShift catalog |
 
@@ -61,7 +62,7 @@ In this lab you will:
 | Prerequisites | 3 min | Verify your environment |
 | Deploy from Catalog | 5 min | Install OpenShell from the OpenShift Console |
 | Client Setup | 2 min | Configure the CLI |
-| AI Agent Coding | 5 min | Watch Pi write real code with DeepSeek |
+| AI Agent Coding | 5 min | Watch Pi write real code with MAAS |
 | Zero Trust Demos | 10 min | Prove network + filesystem + credential restrictions |
 | ZTVP Integration | 5 min | Explore Vault, SPIFFE, ACS, Keycloak, ESO |
 | User Authentication | 5 min | OIDC flow, JWT tokens, Keycloak login |
@@ -72,7 +73,7 @@ In this lab you will:
 
 Use the **configuration bar** at the top of the page to enter your environment details. All commands in this lab will **auto-populate** with your values — no copy-paste errors.
 
-> **Tip:** Your instructor will provide the Bastion Host, SSH Password, Cluster Domain, and DeepSeek API Key. Fill them in before starting Module 2.
+> **Tip:** Your instructor will provide the Bastion Host, SSH Password, Cluster Domain, and MAAS API Key. Fill them in before starting Module 2.
 
 ## Ready?
 

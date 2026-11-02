@@ -37,7 +37,7 @@ graph TB
 ```
 
 **Reading the diagram:** Each ZTVP component connects to OpenShell in a different way:
-- **Vault + ESO** → stores and syncs the DeepSeek API key to the Gateway
+- **Vault + ESO** → stores and syncs the MAAS API key to the Gateway
 - **SPIFFE/SPIRE** → gives the Gateway a cryptographic identity
 - **ACS** → scans the sandbox container image for vulnerabilities
 - **Keycloak** → authenticates users who access the Gateway
@@ -46,7 +46,7 @@ graph TB
 
 > **What is Vault?** [HashiCorp Vault](https://www.vaultproject.io/) is a secret management system. It stores sensitive data (API keys, passwords, certificates) in encrypted storage with fine-grained access control. Instead of putting secrets in Kubernetes Secrets (which are base64-encoded, not encrypted), you put them in Vault where they're encrypted at rest, access-logged, and rotatable.
 
-The Helm chart's pre-install hook stores your DeepSeek API key in Vault automatically.
+The Helm chart's pre-install hook stores your MAAS API key in Vault automatically.
 
 ### Verify Vault Is Running
 
@@ -66,11 +66,11 @@ vault-0   1/1     Running   0          ...
 You can verify the Vault → ESO → K8s Secret chain by checking the synced K8s Secret:
 
 ```bash
-oc get secret deepseek-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
+oc get secret maas-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
 echo "..."
 ```
 
-This should print the first 10 characters of your DeepSeek key, confirming the entire chain works: Vault has the key → ESO synced it → it's available as a K8s Secret.
+This should print the first 10 characters of your MAAS key, confirming the entire chain works: Vault has the key → ESO synced it → it's available as a K8s Secret.
 
 > **Why only 10 characters?** We don't want to expose the full key in the terminal. The first 10 chars are enough to confirm it's the right key.
 
@@ -78,7 +78,7 @@ This should print the first 10 characters of your DeepSeek key, confirming the e
 
 | Path | Purpose |
 |------|---------|
-| `hub/infra/openshell/deepseek` | DeepSeek API key (`api_key` field) |
+| `hub/infra/openshell/maas` | MAAS API key (`api_key` field) |
 
 > **What does `hub/` mean?** The ZTVP configures Vault with a Kubernetes auth method mounted at path `hub/`. This means pods in the cluster can authenticate to Vault using their ServiceAccount tokens — no static credentials needed. The Helm chart's setup job uses this auth method to write the key.
 
@@ -96,11 +96,11 @@ Expected:
 
 ```
 NAME                  STORETYPE            STORE           REFRESH INTERVAL   STATUS         READY
-deepseek-api-key-es   ClusterSecretStore   vault-backend   1h                 SecretSynced   True
+maas-api-key-es       ClusterSecretStore   vault-backend   1h                 SecretSynced   True
 ```
 
 > **Reading this output:**
-> - **NAME**: `deepseek-api-key-es` — the ExternalSecret resource created by the Helm chart
+> - **NAME**: `maas-api-key-es` — the ExternalSecret resource created by the Helm chart
 > - **STORETYPE**: `ClusterSecretStore` — it uses a cluster-wide secret store (not namespace-scoped)
 > - **STORE**: `vault-backend` — the store is backed by Vault
 > - **REFRESH INTERVAL**: `1h` — ESO checks Vault for updates every hour
@@ -114,7 +114,7 @@ graph LR
     ES["ExternalSecret CR<br/>(declares what to sync)"]
     ESO["ESO watches CR<br/>reads from Vault every 1h"]
     V["🔐 Vault KV"]
-    KS["K8s Secret<br/>deepseek-api-key"]
+    KS["K8s Secret<br/>maas-api-key"]
 
     ES --> ESO
     V -->|"ESO reads"| ESO
@@ -243,7 +243,7 @@ Each pillar addresses a different attack vector. An attacker would need to defea
 
 | Attack Vector | Mitigation | ZTVP Pillar |
 |--------|-----------|-------------|
-| Stolen API key | Key in Vault, resolver token in sandbox | **Vault + ESO** |
+| Stolen MAAS API key | Key in Vault, resolver token in sandbox | **Vault + ESO** |
 | Impersonated workload | Cryptographic SPIFFE identity (X.509 SVID) | **SPIRE** |
 | Vulnerable container image | Continuous CVE scanning + admission control | **ACS** |
 | Unauthorized user access | OIDC JWT validation via Keycloak | **Keycloak** |

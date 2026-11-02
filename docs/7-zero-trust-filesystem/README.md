@@ -227,6 +227,6 @@ exit
 
 ## Next Step
 
-Network is locked. Filesystem is locked. But what about **credentials**? The agent needs an API key to call DeepSeek — how is that key protected?
+Network is locked. Filesystem is locked. But what about **credentials**? The agent needs an API key to call MAAS — how is that key protected?
 
 Proceed to: **Credential Security** →

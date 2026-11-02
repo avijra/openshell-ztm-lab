@@ -1,6 +1,6 @@
-# AI Agent Coding with Pi + DeepSeek
+# AI Agent Coding with Pi + MAAS
 
-In this module you will watch the Pi coding agent **write, run, and test real code** inside the sandbox — powered by the DeepSeek LLM. This is the "wow" moment that shows what AI agents can do.
+In this module you will watch the Pi coding agent **write, run, and test real code** inside the sandbox — powered by the Red Hat MAAS LLM (gpt-oss-120b). This is the "wow" moment that shows what AI agents can do.
 
 ## What Is Pi?
 
@@ -8,13 +8,13 @@ In this module you will watch the Pi coding agent **write, run, and test real co
 
 | Capability | What it means |
 |-----------|--------------|
-| **Code generation** | Pi sends your prompt to DeepSeek LLM, which returns generated code |
+| **Code generation** | Pi sends your prompt to MAAS LLM (gpt-oss-120b), which returns generated code |
 | **File creation** | Pi writes the generated code to actual files on disk |
 | **Dependency installation** | Pi runs `npm install` to fetch packages from the npm registry |
 | **Code execution** | Pi runs the generated code with Node.js and shows you the output |
-| **Error recovery** | If the code fails, Pi reads the error, asks DeepSeek for a fix, and tries again |
+| **Error recovery** | If the code fails, Pi reads the error, asks MAAS for a fix, and tries again |
 
-Pi is a Rust binary (v1.4.0) that runs entirely inside the OpenShell sandbox. Every network call it makes — to DeepSeek for code generation, to npm for packages — goes through the OpenShell boundary, which enforces the zero-trust policy.
+Pi is a Rust binary (v1.4.0) that runs entirely inside the OpenShell sandbox. Every network call it makes — to MAAS for code generation, to npm for packages — goes through the OpenShell boundary, which enforces the zero-trust policy.
 
 > **What makes an agent different from a chatbot?** A chatbot generates text. An agent generates text *and takes actions*. Pi doesn't just suggest `npm install express` — it actually runs the command, handles errors, and verifies the result. This is why security matters: the agent has real capabilities, so we need real constraints.
 
@@ -55,7 +55,7 @@ pi -p "Create a Node.js script that prints Hello from the Zero Trust sandbox"
 ```
 
 > **What does `-p` do?** The `-p` flag sends a one-shot prompt to Pi. Pi will:
-> 1. Send your prompt to the **DeepSeek API** (the LLM) for code generation
+> 1. Send your prompt to the **MAAS API** (the LLM) for code generation
 > 2. Receive the generated code back
 > 3. Write it to a file (e.g., `hello.js`)
 > 4. Execute it with `node hello.js`
@@ -91,7 +91,7 @@ pi -p "Create an Express.js REST API with these endpoints: GET /health returns {
 6. **Test** each endpoint with curl
 7. **Report** the results
 
-> **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, installing packages, testing — but fully autonomously. And critically, every network call (to DeepSeek for code, to npm for packages) was verified by the zero-trust boundary.
+> **Why is this impressive?** Pi is doing what a human developer would do — planning, coding, installing packages, testing — but fully autonomously. And critically, every network call (to MAAS for code, to npm for packages) was verified by the zero-trust boundary.
 
 ## What Happened Under the Hood
 
@@ -99,9 +99,9 @@ Pi performed these steps, and every outbound call went through the Boundary:
 
 ```mermaid
 graph TD
-    S1["1️⃣ Pi sends prompt to DeepSeek"]
-    S2["🔒 Boundary checks: api.deepseek.com in allowlist? ✅<br/>Resolves credential token → real API key"]
-    S3["2️⃣ DeepSeek returns generated code"]
+    S1["1️⃣ Pi sends prompt to MAAS"]
+    S2["🔒 Boundary checks: maas-rhdp.apps.maas.redhatworkshops.io in allowlist? ✅<br/>Resolves credential token → real API key"]
+    S3["2️⃣ MAAS returns generated code"]
     S4["3️⃣ Pi writes server.js to disk"]
     S5["4️⃣ Pi runs: npm install express"]
     S6["🔒 Boundary checks: registry.npmjs.org in allowlist? ✅"]
@@ -117,16 +117,16 @@ graph TD
 
 | Request | Destination | Boundary Decision | Result |
 |---------|-------------|-------------------|--------|
-| LLM inference | `api.deepseek.com` | ✅ In allowlist, `curl`/`node` are allowed binaries | Forwarded (with credential resolved) |
+| LLM inference | `maas-rhdp.apps.maas.redhatworkshops.io` | ✅ In allowlist, `curl`/`node` are allowed binaries | Forwarded (with credential resolved) |
 | npm install | `registry.npmjs.org` | ✅ In allowlist, `npm`/`node` are allowed binaries | Forwarded |
 | curl localhost | `127.0.0.1:3000` | ✅ Localhost traffic doesn't leave the sandbox | Direct (no boundary) |
 
-## Step 4 — Verify DeepSeek Credential Is Available
+## Step 4 — Verify MAAS Credential Is Available
 
-While still inside the sandbox, check the DeepSeek API key environment variable:
+While still inside the sandbox, check the MAAS API key environment variable:
 
 ```bash
-echo $DEEPSEEK_API_KEY | head -c 30
+echo $MAAS_API_KEY | head -c 30
 ```
 
 Expected (a resolver token, not the real key):
@@ -135,7 +135,7 @@ Expected (a resolver token, not the real key):
 openshell:resolve:env:v...
 ```
 
-> **What is this?** This is a **resolver token** — an opaque string that looks like `openshell:resolve:env:v1234567890_DEEPSEEK_API_KEY`. It is **not** your real DeepSeek API key (which starts with `sk-`). The real key never enters the sandbox. When Pi uses this token in an API call, the Boundary intercepts the request and swaps the token for the real key before forwarding it. We'll explore this in detail in the Credential Security module.
+> **What is this?** This is a **resolver token** — an opaque string that looks like `openshell:resolve:env:v1234567890_MAAS_API_KEY`. It is **not** your real MAAS API key (which starts with `sk-`). The real key never enters the sandbox. When Pi uses this token in an API call, the Boundary intercepts the request and swaps the token for the real key before forwarding it. We'll explore this in detail in the Credential Security module.
 
 ## Step 5 — Exit the Sandbox
 
@@ -151,7 +151,7 @@ You are back on the bastion.
 |-------------|---------------|
 | Pi wrote and ran real code | The agent has genuine capabilities — it's not just a demo mockup |
 | npm install worked | The network policy selectively allows package registries. Pi can install dependencies, but only from approved sources. |
-| DeepSeek responded | Credential resolution happened transparently — Pi used a resolver token, the Boundary swapped it for the real key |
+| MAAS responded | Credential resolution happened transparently — Pi used a resolver token, the Boundary swapped it for the real key |
 | Everything inside a sandbox | The agent never touched the host, the cluster, or other namespaces. It lives in an isolated world. |
 
 ## The Big Question

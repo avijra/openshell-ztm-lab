@@ -11,7 +11,7 @@ Your instructor will give you four pieces of information. Enter them in the **co
 | **Bastion host** | `bastion.wjw4q.sandbox3490.opentlc.com` | A jump server with network access to the cluster. You'll SSH here to run all commands. |
 | **SSH password** | provided verbally | The password for the `rosa` user on the bastion |
 | **ROSA cluster domain** | `apps.rosa.rosa-wjw4q.8pwg.p3.openshiftapps.com` | The domain suffix for all cluster routes (URLs). Every service is at `https://something.<this-domain>` |
-| **DeepSeek API key** | `sk-...` | Your personal key for the [DeepSeek](https://platform.deepseek.com) LLM API. Pi uses this to generate code. |
+| **MAAS API key** | `sk-...` | Your personal key for the Red Hat MAAS (Model-as-a-Service) LLM API. Pi uses this to generate code via gpt-oss-120b. |
 
 > **What is a bastion host?** A bastion (or jump box) is a hardened server that sits between you and the internal network. You SSH into it, and from there you can access cluster resources. It already has `oc` (the OpenShift CLI) and `openshell` (the OpenShell CLI) installed and authenticated. You never need to install anything on your laptop.
 
@@ -47,7 +47,7 @@ Before proceeding, scroll to the **top of this page** and fill in the form with:
 1. **Bastion Host** — the SSH hostname
 2. **SSH Password** — the SSH password
 3. **Cluster Domain** — the `apps.rosa.rosa-*` domain
-4. **DeepSeek API Key** — your personal key (starts with `sk-`)
+4. **MAAS API Key** — your personal key (starts with `sk-`)
 
 Click **Save**. All commands in this lab will auto-populate with your values.
 
@@ -99,7 +99,7 @@ Once you have:
 
 - [x] SSH access to the bastion
 - [x] `oc whoami` returning `cluster-admin`
-- [x] Your DeepSeek API key ready
+- [x] Your MAAS API key ready
 
 You're all set. Let's deploy OpenShell.
 

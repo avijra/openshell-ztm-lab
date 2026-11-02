@@ -21,9 +21,9 @@ graph TD
 1. A `HelmChartRepository` CR tells OpenShift "there's a Helm repo at this URL"
 2. The OpenShift Console discovers the chart and shows it in the Developer Catalog
 3. When you click Install, the Helm engine runs three phases in order:
-   - **Pre-install hook**: A Job that stores your DeepSeek API key in Vault *before* anything else starts
+   - **Pre-install hook**: A Job that stores your MAAS API key in Vault *before* anything else starts
    - **Main resources**: The Gateway, Supervisor, Route, and ConfigMaps
-   - **Post-install hook**: A Job that creates the sandbox, imports the DeepSeek provider, and configures Pi
+   - **Post-install hook**: A Job that creates the sandbox, imports the MAAS provider, and configures Pi
 
 > **What are Helm hooks?** Hooks are Kubernetes Jobs that run at specific lifecycle points (pre-install, post-install, pre-delete, etc.). They're perfect for setup/teardown tasks that must happen in a specific order. In our case, the API key *must* be in Vault before the Gateway tries to read it.
 
@@ -99,8 +99,8 @@ openshell-ztm-demo    5s
    |-------|-------|-----|
    | **Release Name** | `openshell-ztm-demo` | A unique name for this installation. Helm uses it to track what it created. |
    | **Namespace** | `openshell-system` | A dedicated Kubernetes namespace to isolate OpenShell from other workloads |
-   | **DeepSeek > Enabled** | ✅ checked | Enable the DeepSeek LLM provider so Pi can generate code |
-   | **DeepSeek > API Key** | `<DEEPSEEK_API_KEY>` | Your personal DeepSeek key — it will be stored in Vault, not as plain text |
+   | **MAAS > Enabled** | ✅ checked | Enable the MAAS LLM provider (gpt-oss-120b) so Pi can generate code |
+   | **MAAS > API Key** | `<MAAS_API_KEY>` | Your personal MAAS key — it will be stored in Vault, not as plain text |
    | **Vault > Enabled** | ✅ checked | Store the API key in Vault (ZTVP integration) instead of just a K8s Secret |
 
    Leave all other fields at their defaults.
@@ -112,8 +112,7 @@ openshell-ztm-demo    5s
 > helm repo add openshell-ztm-demo https://avijra.github.io/openshell-ztm-demo-chart/
 > helm install openshell-ztm-demo openshell-ztm-demo/openshell-ztm-demo \
 >   -n openshell-system --create-namespace \
->   --set deepseek.enabled=true \
->   --set deepseek.apiKey=<DEEPSEEK_API_KEY> \
+>   --set maas.apiKey=<MAAS_API_KEY> \
 >   --set vault.enabled=true \
 >   --set clusterDomain=<CLUSTER_DOMAIN>
 > ```
@@ -124,9 +123,9 @@ The installation takes 1–2 minutes. During this time, three things happen in o
 
 **Phase 1: Pre-install hooks run first**
 
-A Kubernetes Job called `vault-seed-deepseek` starts. It:
+A Kubernetes Job called `vault-seed-maas` starts. It:
 - Authenticates to Vault using the Kubernetes auth method (path `hub/`)
-- Writes your DeepSeek API key to Vault at path `hub/infra/openshell/deepseek`
+- Writes your MAAS API key to Vault at path `hub/infra/openshell/maas`
 - Also creates a Kubernetes Secret as a fallback
 
 This happens *before* any OpenShell pods start, ensuring the key is in Vault when the Gateway needs it.
@@ -144,8 +143,8 @@ This happens *before* any OpenShell pods start, ensuring the key is in Vault whe
 
 A Job called `pi-sandbox-setup` starts. It:
 - Creates the `pi-agent-demo` sandbox (a container with Pi v1.4.0 and Node.js 22)
-- Imports the DeepSeek provider profile (tells Pi how to talk to DeepSeek)
-- Registers the DeepSeek provider with the credential from Vault
+- Imports the MAAS provider profile (tells Pi how to talk to the MAAS LLM)
+- Registers the MAAS provider with the credential from Vault
 
 Watch the pods come up from the bastion:
 
@@ -189,7 +188,7 @@ NAME                     READY   STATUS    RESTARTS   AGE
 default--pi-agent-demo   1/1     Running   0          2m
 ```
 
-> **What does `1/1 Running` mean?** The pod has 1 container requested and 1 container running. `Running` means the Gateway has provisioned the sandbox, the Supervisor is connected, and the zero-trust policy is actively enforced. The agent is ready to accept commands.
+> **What does `1/1 Running` mean?** The pod has 1 container requested and 1 container running. `Running` means the Gateway has provisioned the sandbox, the Supervisor is connected, and the zero-trust policy is actively enforced. The agent is ready to accept commands. Pi is configured to use MAAS (gpt-oss-120b) as its default LLM provider.
 
 ## What Just Happened
 
@@ -227,8 +226,8 @@ graph TD
 | **Supervisor** | Pod managed by Gateway | Sits between the Gateway and the Sandbox. Enforces the network boundary — every outbound request from the sandbox passes through the Supervisor first. |
 | **Route** | OpenShift Route (HTTPS) | Exposes the Gateway to the outside world. The OpenShell CLI connects to this URL. |
 | **Policy ConfigMap** | YAML configuration | Contains the network rules (which hosts are allowed) and filesystem rules (which paths are accessible). This is the "policy" that defines what the agent can and cannot do. |
-| **Vault Seed Job** | Pre-install hook Job | Stores your DeepSeek API key in Vault before anything else starts. Runs once and completes. |
-| **Sandbox Create Job** | Post-install hook Job | Creates the `pi-agent-demo` sandbox, imports the DeepSeek provider profile, and registers the credential. Runs once and completes. |
+| **Vault Seed Job** | Pre-install hook Job | Stores your MAAS API key in Vault before anything else starts. Runs once and completes. |
+| **Sandbox Create Job** | Post-install hook Job | Creates the `pi-agent-demo` sandbox, imports the MAAS provider profile, and registers the credential. Runs once and completes. |
 
 ## Troubleshooting
 
@@ -257,7 +256,7 @@ Look for `Events` at the bottom — they'll tell you if the scheduler can't find
 **Vault seed job failed?**
 
 ```bash
-oc logs -n openshell-system job/vault-seed-deepseek-1
+oc logs -n openshell-system job/vault-seed-maas-1
 ```
 
 Common cause: Vault is sealed or the Kubernetes auth path is wrong. The job authenticates to Vault using the `hub/` auth path.

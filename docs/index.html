@@ -160,7 +160,7 @@
       <input type="text" id="cdomain" placeholder="apps.rosa.rosa-xxxxx.xxxx.p3.openshiftapps.com">
     </div>
     <div class="field">
-      <label>DeepSeek API Key</label>
+      <label>MAAS API Key</label>
       <input type="password" id="dskey" placeholder="sk-...">
     </div>
     <button class="btn-save" onclick="saveConfig()">Save</button>
@@ -176,7 +176,7 @@
     document.getElementById('bastion').value = localStorage.getItem('BASTION_HOST') || '';
     document.getElementById('sshpass').value = localStorage.getItem('SSH_PASSWORD') || '';
     document.getElementById('cdomain').value = localStorage.getItem('CLUSTER_DOMAIN') || '';
-    document.getElementById('dskey').value = localStorage.getItem('DEEPSEEK_KEY') || '';
+    document.getElementById('dskey').value = localStorage.getItem('MAAS_KEY') || '';
 
     function populateLinks() {
       var cd = localStorage.getItem('CLUSTER_DOMAIN') || '<CLUSTER_DOMAIN>';
@@ -206,11 +206,11 @@
       localStorage.setItem('BASTION_HOST', b);
       localStorage.setItem('SSH_PASSWORD', s);
       localStorage.setItem('CLUSTER_DOMAIN', c);
-      localStorage.setItem('DEEPSEEK_KEY', k);
+      localStorage.setItem('MAAS_KEY', k);
       location.reload();
     }
     function clearConfig() {
-      ['BASTION_HOST', 'SSH_PASSWORD', 'CLUSTER_DOMAIN', 'DEEPSEEK_KEY'].forEach(function(k) {
+      ['BASTION_HOST', 'SSH_PASSWORD', 'CLUSTER_DOMAIN', 'MAAS_KEY'].forEach(function(k) {
         localStorage.removeItem(k);
       });
       document.querySelectorAll('.lab-config input').forEach(function(i) { i.value = ''; });
@@ -247,12 +247,12 @@
             var bastion = localStorage.getItem('BASTION_HOST') || '&lt;BASTION_HOST&gt;';
             var sshpass = localStorage.getItem('SSH_PASSWORD') || '&lt;SSH_PASSWORD&gt;';
             var cd = localStorage.getItem('CLUSTER_DOMAIN') || '&lt;CLUSTER_DOMAIN&gt;';
-            var dskey = localStorage.getItem('DEEPSEEK_KEY') || '&lt;DEEPSEEK_API_KEY&gt;';
+            var maaskey = localStorage.getItem('MAAS_KEY') || '&lt;MAAS_API_KEY&gt;';
             return content
               .replace(/<BASTION_HOST>/g, bastion)
               .replace(/<SSH_PASSWORD>/g, sshpass)
               .replace(/<CLUSTER_DOMAIN>/g, cd)
-              .replace(/<DEEPSEEK_API_KEY>/g, dskey);
+              .replace(/<MAAS_API_KEY>/g, maaskey);
           });
           hook.afterEach(function(html) {
             var footer = '<div class="rh-footer">'

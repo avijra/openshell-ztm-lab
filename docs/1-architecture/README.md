@@ -28,7 +28,7 @@ graph TB
     end
     User["👤 User"] -->|CLI| GW
     GW --> SV --> SB
-    SB -->|"✅ allowed"| DS["DeepSeek API"]
+    SB -->|"✅ allowed"| MAAS["MAAS API"]
     SB -->|"✅ allowed"| NPM["npm"]
     SB -.-x|"❌ blocked"| Bad["google.com"]
     Vault -.->|secret sync| GW
@@ -39,7 +39,7 @@ graph TB
 **Reading the diagram:**
 - The **User** (you, on the bastion) sends commands via the OpenShell CLI to the **Gateway**
 - The Gateway forwards to the **Supervisor**, which manages the **Sandbox** (where Pi runs)
-- The Sandbox can reach **DeepSeek** and **npm** (green arrows) but **not** google.com (red X)
+- The Sandbox can reach **MAAS** and **npm** (green arrows) but **not** google.com (red X)
 - ZTVP components (dotted arrows) provide secrets, identity, and image scanning behind the scenes
 
 ## What Is a "Sandbox"?
@@ -65,9 +65,9 @@ graph TD
     A["👤 User on Bastion<br/><i>openshell sandbox exec ... pi -p 'Write code'</i>"]
     B["🔗 Gateway<br/>Authenticates the request<br/>routes to correct sandbox"]
     C["👁️ Supervisor<br/>Enforces boundary policy<br/>monitors the sandbox"]
-    D["📦 Sandbox (Pi Agent)<br/>Runs prompt through Pi<br/>Pi calls DeepSeek for code"]
-    E["🔒 Boundary Check<br/>Is api.deepseek.com in allowlist? → ✅ Yes<br/>Resolve credential token → real API key"]
-    F["🤖 DeepSeek API<br/>Returns generated code"]
+    D["📦 Sandbox (Pi Agent)<br/>Runs prompt through Pi<br/>Pi calls MAAS for code"]
+    E["🔒 Boundary Check<br/>Is maas-rhdp.apps.maas.redhatworkshops.io in allowlist? → ✅ Yes<br/>Resolve credential token → real API key"]
+    F["🤖 MAAS API<br/>Returns generated code"]
 
     A -->|"gRPC over TLS"| B
     B -->|"forward"| C
@@ -87,9 +87,9 @@ graph TD
 3. The **Gateway** authenticates your request and finds the right sandbox
 4. The **Supervisor** — a process that runs *outside* the sandbox and monitors it — receives the command
 5. The Supervisor **executes** your command inside the sandbox. Pi starts running.
-6. Pi calls DeepSeek. The HTTPS request hits the **Boundary** (the Supervisor's network filter)
-7. The Boundary checks: "Is `api.deepseek.com` in the allowlist?" → **Yes**. It also swaps the resolver token for the real API key.
-8. The request reaches **DeepSeek**, which returns generated code
+6. Pi calls MAAS. The HTTPS request hits the **Boundary** (the Supervisor's network filter)
+7. The Boundary checks: "Is `maas-rhdp.apps.maas.redhatworkshops.io` in the allowlist?" → **Yes**. It also swaps the resolver token for the real API key.
+8. The request reaches **MAAS**, which returns generated code
 9. The response flows back the same path to your terminal
 
 **The critical insight:** The sandbox never sends the real API key. The Boundary intercepts the request, swaps the resolver token for the real key, and forwards it. If the sandbox were compromised, the attacker would only have a useless token.
@@ -102,12 +102,12 @@ API keys are **never visible** inside the sandbox. They pass through three phase
 
 ```mermaid
 graph LR
-    U["👤 User<br/>provides API key"] -->|"helm install --set deepseek.apiKey=sk-..."| VJ["Vault Seed Job"]
-    VJ -->|"stores key at"| V["🔐 Vault<br/>secret/openshell/deepseek-api-key"]
+    U["👤 User<br/>provides API key"] -->|"helm install --set maas.apiKey=sk-..."| VJ["Vault Seed Job"]
+    VJ -->|"stores key at"| V["🔐 Vault<br/>secret/openshell/maas-api-key"]
     VJ -->|"also creates"| KS["K8s Secret<br/>(fallback)"]
 ```
 
-Your API key goes into **Vault** (HashiCorp's secret management system) via a Kubernetes Job that runs before anything else starts. Vault encrypts it at rest and controls who can access it.
+Your MAAS API key goes into **Vault** (HashiCorp's secret management system) via a Kubernetes Job that runs before anything else starts. Vault encrypts it at rest and controls who can access it.
 
 **Phase 2 — Runtime sync** (ESO keeps secrets fresh)
 
@@ -126,14 +126,14 @@ The **External Secrets Operator** (ESO) watches Vault and automatically syncs th
 graph LR
     SB["📦 Sandbox<br/>sees: openshell:resolve:env:v1:..."]
     SB -->|"sends resolver token"| BND["🔒 Boundary"]
-    BND -->|"swaps token for real key"| DS["🤖 DeepSeek API<br/>receives: sk-abc123..."]
+    BND -->|"swaps token for real key"| MAAS["🤖 MAAS API<br/>receives: sk-abc123..."]
 
     style SB fill:#f8d7da,color:#721c24
     style BND fill:#fff3cd,color:#856404
     style DS fill:#d4edda,color:#155724
 ```
 
-When Pi makes an API call, the `Authorization` header contains a **resolver token** (like `openshell:resolve:env:v123_DEEPSEEK_API_KEY`). The Boundary intercepts this, looks up the real key, and replaces the token before the request leaves the cluster. The sandbox never touches the real key.
+When Pi makes an API call, the `Authorization` header contains a **resolver token** (like `openshell:resolve:env:v123_MAAS_API_KEY`). The Boundary intercepts this, looks up the real key, and replaces the token before the request leaves the cluster. The sandbox never touches the real key.
 
 > **Why this matters:** Even if an attacker compromises the sandbox, they get a resolver token that is (a) bound to a specific endpoint, (b) only resolvable inside the cluster boundary, and (c) useless anywhere else.
 
@@ -172,7 +172,7 @@ graph TD
 | **OpenShell Gateway** | gRPC API server | Receives CLI commands, resolves credentials, applies policy | `openshell-system` |
 | **Supervisor** | Sidecar process | Runs outside the sandbox, enforces the network boundary, monitors the agent | `openshell-system` |
 | **Sandbox** | Isolated container | Where Pi runs — the agent's entire world | `openshell-system` |
-| **Vault** | Secret management (HashiCorp) | Stores and encrypts the DeepSeek API key | `vault` |
+| **Vault** | Secret management (HashiCorp) | Stores and encrypts the MAAS API key | `vault` |
 | **ESO** | External Secrets Operator | Syncs secrets from Vault → Kubernetes Secrets automatically | `external-secrets-operator` |
 | **SPIFFE/SPIRE** | Workload identity framework | Issues cryptographic certificates (SVIDs) to prove workload identity | `zero-trust-workload-identity-manager` |
 | **ACS** | Advanced Cluster Security (StackRox) | Scans container images for CVEs, enforces security policies | `stackrox` |

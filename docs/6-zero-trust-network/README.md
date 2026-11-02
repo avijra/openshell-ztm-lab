@@ -20,10 +20,10 @@ The Helm chart deploys a policy with exactly **three** allowed external hosts:
 
 ```yaml
 network_policies:
-  deepseek_api:
-    name: DeepSeek API
+  maas_api:
+    name: MAAS API
     endpoints:
-      - host: api.deepseek.com
+      - host: maas-rhdp.apps.maas.redhatworkshops.io
         port: 443
     binaries:
       - { path: /usr/bin/curl }
@@ -50,7 +50,7 @@ network_policies:
 
 | Host | Port | Allowed Binaries | Purpose |
 |------|------|-----------------|---------|
-| `api.deepseek.com` | 443 | `curl`, `node` | LLM inference — Pi needs this to generate code |
+| `maas-rhdp.apps.maas.redhatworkshops.io` | 443 | `curl`, `node` | LLM inference — Pi needs this to generate code via MAAS (gpt-oss-120b) |
 | `github.com` / `api.github.com` | 443 | `git`, `curl` | Code repositories — agents may clone repos |
 | `registry.npmjs.org` | 443 | `npm`, `node` | Package installation — Pi installs npm packages |
 
@@ -64,28 +64,28 @@ network_policies:
 openshell sandbox exec pi-agent-demo -- bash
 ```
 
-## Step 2 — Test ALLOWED: DeepSeek API
+## Step 2 — Test ALLOWED: MAAS API
 
 ```bash
-curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://api.deepseek.com/models -H "Authorization: Bearer $DEEPSEEK_API_KEY" | head -c 100
+curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models -H "Authorization: Bearer $MAAS_API_KEY" | head -c 100
 ```
 
 > **Breaking down this command:**
 > - `curl -s` — silent mode (no progress bar)
 > - `-w "\nHTTP %{http_code}\n"` — print the HTTP status code after the response
 > - `--max-time 5` — timeout after 5 seconds (so we don't wait forever for denied connections)
-> - `https://api.deepseek.com/models` — the DeepSeek models endpoint
-> - `-H "Authorization: Bearer $DEEPSEEK_API_KEY"` — sends the resolver token as auth. The Boundary will swap it for the real key.
+> - `https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models` — the MAAS models endpoint (OpenAI-compatible API)
+> - `-H "Authorization: Bearer $MAAS_API_KEY"` — sends the resolver token as auth. The Boundary will swap it for the real key.
 > - `| head -c 100` — show only the first 100 characters (the full response is long)
 
 Expected output:
 
 ```
-{"object":"list","data":[{"id":"deepseek-chat","object":"model"...
+{"object":"list","data":[{"id":"gpt-oss-120b","object":"model"...
 HTTP 200
 ```
 
-✅ **Allowed** — `api.deepseek.com` is in the policy and `curl` is an allowed binary for this endpoint. The Boundary resolved the credential token and forwarded the real API key to DeepSeek.
+✅ **Allowed** — `maas-rhdp.apps.maas.redhatworkshops.io` is in the policy and `curl` is an allowed binary for this endpoint. The Boundary resolved the credential token and forwarded the real API key to MAAS.
 
 ## Step 3 — Test ALLOWED: GitHub
 
@@ -164,7 +164,7 @@ exit
 
 | Test | Target | Expected | Result |
 |------|--------|----------|--------|
-| DeepSeek API | `api.deepseek.com` | HTTP 200 (with auth) | ✅ Allowed — endpoint in policy |
+| MAAS API | `maas-rhdp.apps.maas.redhatworkshops.io` | HTTP 200 (with auth) | ✅ Allowed — endpoint in policy |
 | GitHub | `github.com` | HTTP 200 | ✅ Allowed — endpoint in policy |
 | Google | `www.google.com` | Permission denied | ❌ Denied — not in policy |
 | Example.com | `example.com` | Permission denied | ❌ Denied — not in policy |
