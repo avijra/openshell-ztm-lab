@@ -164,23 +164,27 @@ ACS scans for:
 - **Misconfigurations** — running as root, writable root filesystem, privilege escalation
 - **Compliance violations** — PCI-DSS, HIPAA, NIST standards
 
-### Check the Sandbox Image Scan
+### Verify ACS Is Running
 
-Open ACS in your browser:
+```bash
+oc get pods -n stackrox -l app=central --no-headers
+```
+
+Expected:
+
+```
+central-xxxxxxxxx-xxxxx   1/1   Running   0   ...
+```
+
+You can also open the ACS Console in your browser:
 
 ```
 https://central-stackrox.<CLUSTER_DOMAIN>
 ```
 
-Navigate to: **Vulnerability Management → Results** and search for `openshell`.
+> **Note:** This lab does not configure image-specific scan policies for OpenShell. ACS is deployed by ZTVP and continuously monitors the cluster — scanning deployed images for CVEs, detecting misconfigurations, and enforcing security policies. In a production deployment, you would configure ACS admission control policies to block images with critical CVEs from being deployed.
 
-Alternatively, from the bastion:
-
-```bash
-oc get image-vulnerabilities -n openshell-system 2>/dev/null || echo "Check ACS Console for scan results"
-```
-
-> **Why is continuous scanning important?** A container image might be clean when you build it, but new CVEs are discovered daily. ACS continuously re-scans images against updated vulnerability databases. If a critical CVE is found in a library used by the sandbox image, ACS flags it immediately.
+> **Why does ACS matter in a zero-trust architecture?** Even with network and filesystem enforcement, a compromised container image (e.g., one with a backdoored dependency) could attack from *inside* the sandbox. ACS provides the image-level assurance: it verifies that the sandbox image itself is safe before and after deployment.
 
 ## Pillar 5: Keycloak — User Identity
 
