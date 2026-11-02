@@ -34,34 +34,35 @@ This works because the Gateway is configured with `allowUnauthenticatedUsers: tr
 
 ## The Authentication Architecture
 
-Here is the complete OIDC flow that production deployments use:
+The OIDC login flow has two phases: **getting a token** and **using it**.
+
+**Phase 1 — Login (one-time)**
 
 ```mermaid
-sequenceDiagram
-    participant U as 👤 User (CLI)
-    participant CLI as OpenShell CLI
-    participant KC as Keycloak (ztvp realm)
-    participant GW as OpenShell Gateway
+graph LR
+    A["👤 User runs<br/><code>openshell gateway login</code>"] --> B["🔑 Keycloak<br/>login page opens"]
+    B --> C["User enters<br/>username / password"]
+    C --> D["Keycloak returns<br/>JWT access token<br/>+ refresh token"]
+    D --> E["CLI stores<br/>tokens locally"]
 
-    U->>CLI: openshell gateway login
-    CLI->>CLI: Open browser to Keycloak
-    CLI->>KC: Authorization request (PKCE)
-    KC->>U: Login page (username/password)
-    U->>KC: demo-engineer / openshift
-    KC->>KC: Validate credentials
-    KC->>CLI: Authorization code (via localhost callback)
-    CLI->>KC: Exchange code for tokens
-    KC->>CLI: Access token (JWT) + Refresh token
-    CLI->>CLI: Store tokens locally
-
-    Note over CLI,GW: All subsequent CLI commands include the JWT
-
-    CLI->>GW: openshell sandbox list<br/>Authorization: Bearer eyJhbG...
-    GW->>GW: Validate JWT signature<br/>Check issuer, audience, expiry
-    GW->>CLI: 200 OK — sandbox list
-
-    Note over GW: If JWT is invalid or expired → 401 Unauthorized
+    style B fill:#fefcbf,color:#744210
+    style D fill:#d4edda,color:#155724
 ```
+
+**Phase 2 — Every subsequent command**
+
+```mermaid
+graph LR
+    F["💻 CLI sends command<br/><code>openshell sandbox list</code><br/>+ JWT in Authorization header"] --> G["⚡ Gateway validates JWT:<br/>✅ Signature · ✅ Issuer<br/>✅ Audience · ✅ Not expired"]
+    G -->|"Valid"| H["✅ 200 OK<br/>sandbox list returned"]
+    G -->|"Invalid"| I["❌ 401 Unauthorized"]
+
+    style G fill:#fff3cd,color:#856404
+    style H fill:#d4edda,color:#155724
+    style I fill:#f8d7da,color:#721c24
+```
+
+**The key idea:** You log in once, the CLI stores the JWT locally, and every subsequent command includes it automatically. The Gateway never trusts the caller by default — it validates the token on every request.
 
 > **What is PKCE?** PKCE (Proof Key for Code Exchange, pronounced "pixie") is a security extension to the OAuth2 authorization code flow. It prevents authorization code interception attacks by requiring the CLI to prove it initiated the login request. The CLI generates a random `code_verifier`, hashes it to create a `code_challenge`, sends the challenge with the auth request, and later proves knowledge of the verifier when exchanging the code for tokens.
 
