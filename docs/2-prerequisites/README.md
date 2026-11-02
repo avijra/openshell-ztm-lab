@@ -87,11 +87,13 @@ cluster-admin
 
 > **What is `oc`?** It's the OpenShift command-line tool — like `kubectl` for Kubernetes, but with extra OpenShift features. `cluster-admin` means you have full administrative access to the cluster.
 
-If you see a login error, run:
+If you see a login error, ask your instructor for the **cluster-admin password** (this is different from the SSH password) and run:
 
 ```bash
-oc login https://api.rosa-wjw4q.8pwg.p3.openshiftapps.com:443 --username cluster-admin --password <SSH_PASSWORD>
+oc login https://api.rosa-wjw4q.8pwg.p3.openshiftapps.com:443 --username cluster-admin --password <CLUSTER_ADMIN_PASSWORD>
 ```
+
+> **Note:** The cluster-admin password is set separately via `rosa create admin` and is **not** the same as the SSH password. The bastion is pre-configured with a valid `oc` session, so this step is rarely needed.
 
 ## Ready?
 

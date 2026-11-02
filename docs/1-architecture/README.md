@@ -130,7 +130,7 @@ graph LR
 
     style SB fill:#f8d7da,color:#721c24
     style BND fill:#fff3cd,color:#856404
-    style DS fill:#d4edda,color:#155724
+    style MAAS fill:#d4edda,color:#155724
 ```
 
 When Pi makes an API call, the `Authorization` header contains a **resolver token** (like `openshell:resolve:env:v123_MAAS_API_KEY`). The Boundary intercepts this, looks up the real key, and replaces the token before the request leaves the cluster. The sandbox never touches the real key.
@@ -145,7 +145,7 @@ Every outbound request is checked. There is no default-allow.
 graph TD
     P["Process in Sandbox<br/>makes a network request"] --> Q{"Is the destination host<br/>in the allowlist?"}
     Q -->|"Yes"| A["✅ Forward request"]
-    Q -->|"No"| D["❌ Silently drop<br/>(connection times out)"]
+    Q -->|"No"| D["❌ Instantly denied<br/>(connection refused in ~2ms)"]
 
     P2["Process in Sandbox<br/>opens a file"] --> Q2{"Is the path in<br/>read_only or read_write?"}
     Q2 -->|"read_only"| R["✅ Read allowed, write denied"]

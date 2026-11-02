@@ -26,13 +26,20 @@ release "openshell-ztm-demo" uninstalled
 oc get all -n openshell-system
 ```
 
-Expected: only the namespace remains (or a few lingering pods in `Terminating` state that will clear in seconds).
+Expected: only the namespace remains, possibly with the completed setup job and any pods in `Terminating` state:
+
+```
+NAME                           READY   STATUS      RESTARTS   AGE
+pod/pi-sandbox-setup-1-xxxxx   0/1     Completed   0          7m
+```
+
+Or if everything has finished terminating:
 
 ```
 No resources found in openshell-system namespace.
 ```
 
-> **What if pods are still `Terminating`?** This is normal. Kubernetes gives pods a grace period (usually 30 seconds) to shut down cleanly. The Supervisor and sandbox need a moment to disconnect and clean up. Wait 30 seconds and check again.
+> **Why is the setup job still there?** Helm hook jobs with `hook-delete-policy: before-hook-creation` are cleaned up on the *next* install, not on uninstall. This completed job is harmless. Deleting the namespace in Step 4 removes it entirely.
 
 ## Step 3 — Vault Secret (No Action Needed)
 

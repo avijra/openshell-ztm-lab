@@ -114,7 +114,7 @@ openshell-ztm-demo    5s
 >   -n openshell-system --create-namespace \
 >   --set maas.apiKey=<MAAS_API_KEY> \
 >   --set vault.enabled=true \
->   --set clusterDomain=<CLUSTER_DOMAIN>
+>   --set global.clusterDomain=<CLUSTER_DOMAIN>
 > ```
 
 ## Step 4 — Watch the Deployment
@@ -196,7 +196,7 @@ Let's trace exactly what the chart created:
 
 ```mermaid
 graph TD
-    HC["Helm Chart v1.3.0"]
+    HC["Helm Chart"]
 
     subgraph hooks["Hook Jobs"]
         VJ["Pre-install:<br/>Vault Seed Job"]
