@@ -63,15 +63,25 @@ pi -p "Create a Node.js script that prints Hello from the Zero Trust sandbox"
 >
 > All of this happens autonomously. You'll see Pi's thought process and actions in real time.
 
-Expected behavior:
+Expected behavior — Pi creates a file and shows the code:
 
 ```
-Created `/sandbox/hello.js` and verified it runs:
+The script has been created as hello.js:
+... (code shown) ...
+Run it with: node hello.js
+```
 
+You can verify it yourself:
+
+```bash
+node /sandbox/hello.js
+```
+
+```
 Hello from the Zero Trust sandbox
 ```
 
-> The exact output format varies, but you should see Pi writing a file and executing it successfully. **This is an AI agent in action** — it didn't just suggest code, it wrote it, ran it, and verified it works.
+> The exact output format varies by model. Pi may auto-execute the code or simply create the file and suggest how to run it. Either way, **this is an AI agent in action** — it generated real code via MAAS and wrote it to disk inside the sandbox.
 
 ## Step 3 — Complex Prompt: REST API
 

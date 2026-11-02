@@ -101,10 +101,10 @@ curl -s https://maas-rhdp.apps.maas.redhatworkshops.io/v1/models \
   -H "Authorization: Bearer $MAAS_API_KEY" | head -c 200
 ```
 
-Expected: a JSON response listing available models (truncated):
+Expected: a JSON response listing available models (key order may vary):
 
 ```json
-{"object":"list","data":[{"id":"gpt-oss-120b","object":"model"...
+{"data":[{"id":"gpt-oss-120b","object":"model","created":...}],"object":"list"}
 ```
 
 ✅ **The call succeeds!** Here's what happened behind the scenes:

@@ -41,8 +41,7 @@ curl -v --max-time 5 https://pypi.org/simple/requests/ 2>&1 | tail -3
 Expected:
 
 ```
-* Immediate connect fail for x.x.x.x: Permission denied
-* Failed to connect to pypi.org port 443 after 2 ms: Couldn't connect to server
+* Closing connection
 curl: (7) Failed to connect to pypi.org port 443 after 2 ms: Couldn't connect to server
 ```
 

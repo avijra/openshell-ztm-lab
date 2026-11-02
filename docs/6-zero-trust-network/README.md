@@ -78,10 +78,10 @@ curl -s -w "\nHTTP %{http_code}\n" --max-time 5 https://maas-rhdp.apps.maas.redh
 > - `-H "Authorization: Bearer $MAAS_API_KEY"` — sends the resolver token as auth. The Boundary will swap it for the real key.
 > - `| head -c 100` — show only the first 100 characters (the full response is long)
 
-Expected output:
+Expected output (JSON key order may vary):
 
 ```
-{"object":"list","data":[{"id":"gpt-oss-120b","object":"model"...
+{"data":[{"id":"gpt-oss-120b","object":"model","created":...,"owned_by":"openai"}],"object":"...
 HTTP 200
 ```
 
@@ -114,17 +114,16 @@ curl -v --max-time 5 https://www.google.com 2>&1 | tail -3
 Expected output:
 
 ```
-* Immediate connect fail for x.x.x.x: Permission denied
-* Failed to connect to www.google.com port 443 after 2 ms: Couldn't connect to server
+* Closing connection
 curl: (7) Failed to connect to www.google.com port 443 after 2 ms: Couldn't connect to server
 ```
 
 ❌ **Denied** — Look at the key phrases:
-- **"Immediate connect fail"** — the connection didn't time out or get reset. It was **instantly rejected**.
-- **"Permission denied"** — the Supervisor blocked the TCP connection before it even started.
-- **"after 2 ms"** — this happened in milliseconds. The request never left the sandbox.
+- **"after 2 ms"** — the connection was **instantly rejected**, not timed out after 30 seconds.
+- **"Couldn't connect to server"** — the Supervisor blocked the TCP connection before it left the sandbox.
+- **"Closing connection"** — curl gave up immediately because the socket was denied.
 
-> **How does this work technically?** The Supervisor intercepts DNS resolution. When the sandbox tries to resolve `www.google.com`, the Supervisor returns a "fake" IP address (like `198.18.0.x`). When the sandbox tries to connect to that IP, the Supervisor immediately returns `EACCES` (Permission denied) at the socket level. The connection never reaches the real Google server.
+> **How does this work technically?** The Supervisor intercepts DNS resolution. When the sandbox tries to resolve `www.google.com`, the Supervisor returns a "fake" IP address (like `198.18.0.x`). When the sandbox tries to connect to that IP, the Supervisor immediately refuses the connection at the socket level. The connection never reaches the real Google server.
 
 ## Step 5 — Test DENIED: Arbitrary Endpoint
 
@@ -135,9 +134,8 @@ curl -v --max-time 5 https://example.com 2>&1 | tail -3
 Expected:
 
 ```
-* Immediate connect fail for x.x.x.x: Permission denied
-...
-curl: (7) Failed to connect to example.com port 443 ...
+* Closing connection
+curl: (7) Failed to connect to example.com port 443 after 2 ms: Couldn't connect to server
 ```
 
 ❌ **Denied** — `example.com` is not in the allowlist. Same instant rejection.
