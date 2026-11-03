@@ -199,8 +199,7 @@ Expected (key fields):
   "name": "Demo Engineer",
   "iss": "https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp",
   "azp": "openshell-gateway",
-  "aud": "openshell-gateway",
-  "scope": "profile email openid",
+  "scope": "email profile openid",
   "exp": 1730446800
 }
 ```
@@ -212,8 +211,8 @@ Expected (key fields):
 > | `sub` | Subject — a unique UUID for this user | ✅ Used for audit logs and access control |
 > | `preferred_username` | Human-readable username | ✅ Displayed in `whoami` |
 > | `iss` (issuer) | Who issued the token — must match the Gateway's OIDC config | ✅ **Must match** `https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp` |
-> | `aud` (audience) | Who the token is intended for | ✅ **Must include** `openshell-gateway` |
 > | `azp` (authorized party) | Which client requested the token | ✅ **Must be** `openshell-gateway` |
+> | `aud` (audience) | Who the token is intended for — **not present yet** (added in Step 5a) | ✅ **Must include** `openshell-gateway` |
 > | `exp` (expiration) | Unix timestamp when the token expires | ✅ Rejects expired tokens |
 > | `scope` | What the token grants access to | ✅ Maps to OpenShell permissions |
 >

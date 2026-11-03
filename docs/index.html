@@ -252,6 +252,7 @@
               .replace(/<BASTION_HOST>/g, bastion)
               .replace(/<SSH_PASSWORD>/g, sshpass)
               .replace(/<CLUSTER_DOMAIN>/g, cd)
+              .replace(/\$\{CLUSTER_DOMAIN\}/g, cd)
               .replace(/<MAAS_API_KEY>/g, maaskey);
           });
           hook.afterEach(function(html) {
