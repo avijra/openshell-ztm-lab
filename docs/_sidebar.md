@@ -8,6 +8,6 @@
 * [📁 Filesystem Zero Trust](7-zero-trust-filesystem/README.md)
 * [🔑 Credential Security](8-credential-security/README.md)
 * [🛡️ ZTVP Integration](9-ztvp-integration/README.md)
-* [🔐 User Authentication](9a-user-authentication/README.md)
+* [🔐 Agent Identity & Auth](9a-user-authentication/README.md)
 * [⚡ Dynamic Policy](10-dynamic-policy/README.md)
 * [🧹 Cleanup](11-cleanup/README.md)

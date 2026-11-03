@@ -147,10 +147,10 @@ openshell-gateway   ...
 
 | Property | Value |
 |----------|-------|
-| Identity format | `spiffe://cluster.local/ns/openshell-system/sa/openshell-ztm-demo` |
+| Identity format | `spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell-ztm-demo` |
 | Certificate type | X.509 SVID (a standard TLS certificate with a SPIFFE ID) |
 | Rotation | Automatic — SPIRE rotates certificates before they expire |
-| Trust domain | `cluster.local` |
+| Trust domain | The cluster's FQDN (e.g., `apps.ocp.xxxxx.sandboxNNNN.opentlc.com`) |
 
 > **Why does this matter?** In zero trust, you can't assume "same network = trusted." SPIFFE gives each workload a cryptographic passport. The Gateway can prove to Vault, to Keycloak, or to any other service that it is who it claims to be — without shared secrets or static credentials.
 
