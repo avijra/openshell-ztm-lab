@@ -420,6 +420,8 @@ Expected:
 > 5. Keycloak verified the PKCE challenge, issued tokens, and the CLI stored them locally
 >
 > In a real deployment, engineers would run the CLI on their laptops where a browser is available. This curl workaround demonstrates the same flow for the headless lab bastion.
+>
+> **Troubleshooting:** If the form action extraction prints `NOT_FOUND`, the Keycloak login page may have a different HTML structure (e.g., a JS-rendered theme). Check the error page: `grep 'data-page-id' /tmp/kc-login.html`. If it shows `login-error` with "Invalid parameter: redirect_uri", the Keycloak client's redirect URIs need fixing (see Step 5b). If it shows `login-login` but no `action=` attribute, your Keycloak version may use a JavaScript-based form — use the ROPC JWT from Step 2 as an alternative.
 
 ### Step 8 — See the Difference: `whoami`
 
@@ -435,12 +437,14 @@ Expected:
 ```
 Current User
 
-  Subject: ab9e6ba9-203e-4f1a-aef7-0ae563aef322
+  Subject: <your-keycloak-user-uuid>
   Name: demo-engineer
   Provider: oidc
   Roles:
   Scopes:
 ```
+
+The `Subject` is a UUID assigned by Keycloak when you created the user — it will be different on every cluster.
 
 Switch back to the mTLS gateway to see the unauthenticated identity:
 
@@ -467,7 +471,7 @@ Side by side:
 
 | Property | Unauthenticated | Authenticated |
 |----------|----------------|---------------|
-| **Subject** | `unauthenticated-local-dev` | `ab9e6ba9-...` (Keycloak UUID) |
+| **Subject** | `unauthenticated-local-dev` | `<keycloak-uuid>` (unique per user) |
 | **Name** | `Unauthenticated Local Dev` | `demo-engineer` |
 | **Provider** | `local_dev` | `oidc` |
 | **Roles** | `openshell-user, openshell-admin` | *(empty — no roles granted yet)* |
@@ -527,14 +531,14 @@ Expected output (annotated):
 
 ```json
 {
-  "boundary_id": "7903ea09-d5a5-4ccf-9210-cacb3239dc31",
-  "session_id": "0122ebf3-f6a4-709c-1953-f367980becc0",
+  "boundary_id": "<unique-boundary-uuid>",
+  "session_id": "<unique-session-uuid>",
   "gateway_id": "openshell-ztm-demo",
   "session_rotation": 1,
   "auth_epoch": 1,
   "verification_keys": [
     {
-      "key_id": "909f503602ebaace501da30ffae3db06",
+      "key_id": "<gateway-jwt-key-id>",
       "public_key_pem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
     }
   ],
@@ -542,22 +546,24 @@ Expected output (annotated):
     "uid": 1001030000,
     "gid": 1001030000,
     "source": "kubernetes-config",
-    "resource_digest": "sandbox:2abaa526-6466-4009-a212-6f796c70fde9"
+    "resource_digest": "sandbox:<sandbox-resource-uid>"
   },
   "resource_claims": {
-    "kubernetes.sandbox_resource_uid": "2abaa526-...",
-    "kubernetes.supervisor_pod_uid": "82b6adf7-...",
-    "kubernetes.workload_pod_uid": "1377b681-...",
-    "kubernetes.namespace_uid": "c5dab19f-...",
-    "kubernetes.control_policy_uid": "5f8ba608-...",
-    "kubernetes.egress_policy_uid": "a5d6b86c-..."
+    "kubernetes.sandbox_resource_uid": "<uuid>",
+    "kubernetes.supervisor_pod_uid": "<uuid>",
+    "kubernetes.workload_pod_uid": "<uuid>",
+    "kubernetes.namespace_uid": "<uuid>",
+    "kubernetes.control_policy_uid": "<uuid>",
+    "kubernetes.egress_policy_uid": "<uuid>"
   },
   "provisioning_evidence": {
-    "generation": "1646dc9d-c421-4074-96bf-ae0cf0f444aa",
-    "evidence_digest": "967061829ef16673c5f7c3fc1ba15573828adc54..."
+    "generation": "<uuid>",
+    "evidence_digest": "<sha256-hex-digest>"
   }
 }
 ```
+
+> **Note:** Every UUID and digest will be unique on your cluster. The important thing is the **structure** — the fields that are present and what they mean.
 
 > **Reading the sandbox identity document:**
 >
@@ -582,7 +588,7 @@ oc exec -n openshell-system default--pi-agent-demo -c agent -- cat /.openshell/p
 Expected:
 
 ```
-1377b681-0323-418b-81c4-879b74b6721e
+<your-sandbox-pod-uid>
 ```
 
 This matches the `kubernetes.workload_pod_uid` in `resource_claims`. The boundary runtime continuously verifies that the pod UID it's running in matches the one it was provisioned for — if they don't match, the boundary shuts down.
@@ -659,6 +665,8 @@ oc exec -n zero-trust-workload-identity-manager spire-server-0 -c spire-server \
   -- /spire-server entry show 2>&1 | grep -B1 -A8 'openshell-system'
 ```
 
+> **Note:** The SPIRE binary path is `/spire-server` in the ZTVP-deployed image. If your cluster uses a different SPIRE image, the path might be `/opt/spire/bin/spire-server` instead. Run `oc exec -n zero-trust-workload-identity-manager spire-server-0 -c spire-server -- find / -name spire-server -type f 2>/dev/null` to locate it.
+
 Expected (you'll see entries for three service accounts):
 
 ```
@@ -699,27 +707,26 @@ oc exec -n zero-trust-workload-identity-manager spire-server-0 -c spire-server \
   -- /spire-server entry show 2>&1 | grep 'SPIFFE ID' | sed 's|.*/ns/||' | sed 's|/sa/.*||' | sort -u
 ```
 
-Expected:
+Expected (the exact numbers will vary by cluster):
 
 ```
 Total workloads with SPIFFE identity:
-162
+160+
 
 Namespaces with SPIFFE identities:
 cert-manager
 cert-manager-operator
 external-secrets
-external-secrets-operator
 keycloak
 keycloak-system
 openshell-system
 stackrox
 vault
 zero-trust-workload-identity-manager
-... (23 namespaces total)
+... (20+ namespaces total)
 ```
 
-> **162 workloads.** Every security-critical service in the cluster — Vault, Keycloak, ACS/StackRox, ESO, cert-manager, and OpenShell — has a cryptographic SPIFFE identity. This is what "zero trust at the workload level" means: no pod is trusted just because it's on the cluster network. Every pod must cryptographically prove what it is.
+> **Over 100 workloads.** Every security-critical service in the cluster — Vault, Keycloak, ACS/StackRox, ESO, cert-manager, and OpenShell — has a cryptographic SPIFFE identity. The exact count depends on how many operators and workloads are deployed, but the key point is the same: no pod is trusted just because it's on the cluster network. Every pod must cryptographically prove what it is.
 
 ---
 
@@ -851,7 +858,7 @@ Expected:
 
 ```
 Gateway JWT Key ID:
-909f503602ebaace501da30ffae3db06
+<your-gateway-key-id>
 
 Gateway JWT config:
 [openshell.gateway.gateway_jwt]
@@ -942,7 +949,7 @@ graph TB
 | Concept | Detail |
 |---------|--------|
 | **User identity** | Keycloak OIDC JWT — proves who the human is |
-| **Workload identity** | SPIFFE/SPIRE — 162 workloads across 23 namespaces have cryptographic SVIDs |
+| **Workload identity** | SPIFFE/SPIRE — every security-critical workload across 20+ namespaces has a cryptographic SVID |
 | **Service identity** | Vault K8s auth — Gateway proves namespace + SA to read secrets, 15-minute TTL |
 | **Sandbox identity** | `boundary.json` — unique IDs, verification keys, resource claims, provisioning evidence |
 | **Gateway JWT** | Internal JWT layer — Gateway signs commands to sandbox with Ed25519 key |
