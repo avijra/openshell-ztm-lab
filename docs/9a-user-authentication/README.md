@@ -73,12 +73,23 @@ graph LR
 
 > **What is PKCE?** PKCE (Proof Key for Code Exchange, pronounced "pixie") is a security extension to the OAuth2 authorization code flow. It prevents authorization code interception attacks by requiring the CLI to prove it initiated the login request. The CLI generates a random `code_verifier`, hashes it to create a `code_challenge`, sends the challenge with the auth request, and later proves knowledge of the verifier when exchanging the code for tokens.
 
+### Step 0 — Set Cluster Variables
+
+These variables are used throughout the module. They auto-detect your cluster's domain so all commands work on any ZTVP cluster:
+
+```bash
+CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+OPENSHELL_GATEWAY_ENDPOINT=https://openshell-ztm-demo-openshell-system.${CLUSTER_DOMAIN}
+echo "Cluster domain: $CLUSTER_DOMAIN"
+echo "Gateway endpoint: $OPENSHELL_GATEWAY_ENDPOINT"
+```
+
 ### Step 1 — Create a Demo User in Keycloak
 
 The ZTVP realm comes with service users (like `acs-admin`), but no regular human user. Let's create one:
 
 ```bash
-KEYCLOAK_URL=https://keycloak.<CLUSTER_DOMAIN>
+KEYCLOAK_URL=https://keycloak.${CLUSTER_DOMAIN}
 ADMIN_PASSWORD=$(oc get secret keycloak-admin-user -n keycloak-system -o jsonpath='{.data.password}' | base64 -d)
 ```
 
@@ -186,7 +197,7 @@ Expected (key fields):
   "preferred_username": "demo-engineer",
   "email": "engineer@example.com",
   "name": "Demo Engineer",
-  "iss": "https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp",
+  "iss": "https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp",
   "azp": "openshell-gateway",
   "aud": "openshell-gateway",
   "scope": "profile email openid",
@@ -200,7 +211,7 @@ Expected (key fields):
 > |-------|---------|---------------------|
 > | `sub` | Subject — a unique UUID for this user | ✅ Used for audit logs and access control |
 > | `preferred_username` | Human-readable username | ✅ Displayed in `whoami` |
-> | `iss` (issuer) | Who issued the token — must match the Gateway's OIDC config | ✅ **Must match** `https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp` |
+> | `iss` (issuer) | Who issued the token — must match the Gateway's OIDC config | ✅ **Must match** `https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp` |
 > | `aud` (audience) | Who the token is intended for | ✅ **Must include** `openshell-gateway` |
 > | `azp` (authorized party) | Which client requested the token | ✅ **Must be** `openshell-gateway` |
 > | `exp` (expiration) | Unix timestamp when the token expires | ✅ Rejects expired tokens |
@@ -216,7 +227,7 @@ The Gateway is configured with these OIDC settings (from the Helm chart values):
 auth:
   allowUnauthenticatedUsers: true    # ← For this lab only!
 oidc:
-  issuer: "https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp"
+  issuer: "https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp"
   audience: "openshell-gateway"
 ```
 
@@ -294,7 +305,7 @@ curl -sk -w "\nHTTP %{http_code}\n" -X PUT \
   -H "Content-Type: application/json" \
   -d '{
     "clientId": "openshell-gateway",
-    "redirectUris": ["http://localhost:*/*", "http://127.0.0.1:*/*"],
+    "redirectUris": ["*"],
     "webOrigins": ["+"],
     "publicClient": true,
     "directAccessGrantsEnabled": true,
@@ -305,7 +316,9 @@ curl -sk -w "\nHTTP %{http_code}\n" -X PUT \
 
 Expected: `HTTP 204`
 
-> **What are these redirect URIs?** When `openshell gateway login` runs, it starts a temporary HTTP server on a random local port (e.g., `http://127.0.0.1:43599/callback`). After you log in at Keycloak, Keycloak redirects the browser back to this URL with the authorization code. The `http://127.0.0.1:*/*` pattern tells Keycloak: "Allow redirects to any port on localhost." Setting `rootUrl` to empty prevents Keycloak from resolving relative redirect URIs against a stale base URL.
+> **Why `*` for redirect URIs?** When `openshell gateway login` runs, it starts a temporary HTTP server on a random local port (e.g., `http://127.0.0.1:43599/callback`). Keycloak redirects back to this URL with the authorization code. The `*` wildcard allows any redirect URI. This is acceptable for a lab environment because the client is a **public OIDC client** (no client secret) — the PKCE code challenge protects the flow, not the redirect URI. In production, you would restrict this to specific URIs. Setting `rootUrl` to empty prevents Keycloak from resolving relative URIs against a stale base URL.
+>
+> **Note:** Some Keycloak versions support `http://127.0.0.1:*/*` as a port wildcard pattern. Red Hat Build of Keycloak (RHBK) deployed by ZTVP does not — use `*` instead.
 
 **5c. Verify the Gateway's OIDC issuer** points to this cluster's Keycloak:
 
@@ -314,7 +327,7 @@ oc get configmap openshell-ztm-demo-config -n openshell-system \
   -o jsonpath='{.data.gateway\.toml}' | grep -A3 'oidc'
 ```
 
-The `issuer` field must match `https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp`. If it points to a different cluster, update the ConfigMap:
+The `issuer` field must match `https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp`. If it points to a different cluster, update the ConfigMap:
 
 ```bash
 CURRENT_CONFIG=$(oc get configmap openshell-ztm-demo-config -n openshell-system \
@@ -322,7 +335,7 @@ CURRENT_CONFIG=$(oc get configmap openshell-ztm-demo-config -n openshell-system 
 
 # Replace the issuer (adjust the old URL if different)
 FIXED_CONFIG=$(echo "$CURRENT_CONFIG" | \
-  sed "s|issuer = \"https://keycloak\.[^\"]*\"|issuer = \"https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp\"|")
+  sed "s|issuer = \"https://keycloak\.[^\"]*\"|issuer = \"https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp\"|")
 
 oc create configmap openshell-ztm-demo-config -n openshell-system \
   --from-literal="gateway.toml=$FIXED_CONFIG" --dry-run=client -o yaml | oc apply -f -
@@ -334,50 +347,20 @@ oc wait --for=condition=Ready pod/openshell-ztm-demo-0 -n openshell-system --tim
 
 > **Why might this be wrong?** The Helm chart's setup job sets the OIDC issuer based on the cluster domain at install time. If the chart was built for a different environment, the issuer may point to the wrong Keycloak instance. The Gateway fetches Keycloak's public key from this URL, so a mismatch means "unknown signing key" errors.
 
-### Step 6 — Register an OIDC Gateway
+### Step 6 — Register OIDC Gateway + Headless Login
 
-Register a new gateway endpoint that uses OIDC authentication instead of mTLS:
+On a machine with a browser, `openshell gateway add` with OIDC flags registers the gateway and opens the login page automatically. On this headless bastion, the browser can't open — but the CLI still starts a callback listener on a random local port. We exploit this by driving the login flow with `curl` while the CLI waits for the callback.
+
+Run the entire block below:
 
 ```bash
-OPENSHELL_GATEWAY_ENDPOINT=https://openshell-ztm-demo-openshell-system.<CLUSTER_DOMAIN>
-
+# 1. Start gateway add in background — it registers AND starts the callback listener
 openshell gateway add "$OPENSHELL_GATEWAY_ENDPOINT" \
   --name ztm-demo-oidc \
-  --oidc-issuer "https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp" \
+  --oidc-issuer "https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp" \
   --oidc-client-id "openshell-gateway" \
   --oidc-audience "openshell-gateway" \
-  --gateway-insecure
-```
-
-The CLI prints the gateway registration and then tries to open a browser:
-
-```
-✓ Gateway 'ztm-demo-oidc' added and set as active
-  Endpoint: https://openshell-ztm-demo-openshell-system.<CLUSTER_DOMAIN>
-  Auth: oidc
-
-  Opening browser for OIDC authentication...
-Could not open browser automatically.
-Open this URL in your browser:
-  https://keycloak.<CLUSTER_DOMAIN>/realms/ztvp/protocol/openid-connect/auth?
-    response_type=code&client_id=openshell-gateway&...
-```
-
-The browser can't open on the headless bastion. **Press `Ctrl+C`** to cancel — the next step completes the login without a browser.
-
-> **What happens in this URL?**
-> - `response_type=code` — Authorization Code flow (not implicit — more secure)
-> - `code_challenge` + `code_challenge_method=S256` — PKCE protection
-> - `redirect_uri=http://127.0.0.1:<PORT>/callback` — the CLI starts a temporary local HTTP server to receive the callback
-> - `scope=openid` — request an OpenID Connect token (includes identity claims)
-
-### Step 7 — Headless OIDC Login (Bastion Workaround)
-
-On a machine with a browser, `openshell gateway login` opens Keycloak's login page automatically. On this headless bastion, we drive the same flow with `curl` — the CLI starts its callback listener, we submit credentials to Keycloak via the REST API, and Keycloak redirects the auth code back to the CLI's listener.
-
-```bash
-# 1. Start gateway login in background (it starts the callback listener)
-openshell gateway login --gateway-insecure > /tmp/oidc-login.txt 2>&1 &
+  --gateway-insecure > /tmp/oidc-login.txt 2>&1 &
 OIDC_PID=$!
 sleep 4
 
@@ -409,26 +392,47 @@ wait $OIDC_PID
 Expected:
 
 ```
-✓ Authenticated to gateway 'ztm-demo-oidc' as demo-engineer
+✓ Gateway 'ztm-demo-oidc' added and set as active
+  Endpoint: https://openshell-ztm-demo-openshell-system.${CLUSTER_DOMAIN}
+  Auth: oidc
+
+  Opening browser for OIDC authentication...
+Could not open browser automatically.
+Open this URL in your browser:
+  https://keycloak.${CLUSTER_DOMAIN}/realms/ztvp/protocol/openid-connect/auth?...
+
+✓ Authenticated successfully
 ```
 
 > **What just happened?** The same OIDC Authorization Code + PKCE flow that a browser would perform, driven by `curl`:
-> 1. The CLI generated a `code_verifier` and started a listener on a random port
+> 1. `gateway add` registered the OIDC gateway, generated a PKCE `code_verifier`, and started a listener on a random port (e.g., `http://127.0.0.1:40201/callback`)
 > 2. We visited Keycloak's login page and submitted credentials via the form POST
 > 3. Keycloak validated the password and redirected to `http://127.0.0.1:<PORT>/callback?code=...`
 > 4. The CLI received the auth code, sent it to Keycloak's token endpoint along with the `code_verifier`
 > 5. Keycloak verified the PKCE challenge, issued tokens, and the CLI stored them locally
 >
 > In a real deployment, engineers would run the CLI on their laptops where a browser is available. This curl workaround demonstrates the same flow for the headless lab bastion.
->
-> **Troubleshooting:** If the form action extraction prints `NOT_FOUND`, the Keycloak login page may have a different HTML structure (e.g., a JS-rendered theme). Check the error page: `grep 'data-page-id' /tmp/kc-login.html`. If it shows `login-error` with "Invalid parameter: redirect_uri", the Keycloak client's redirect URIs need fixing (see Step 5b). If it shows `login-login` but no `action=` attribute, your Keycloak version may use a JavaScript-based form — use the ROPC JWT from Step 2 as an alternative.
+
+### Step 7 — Verify Authentication
+
+Confirm the login succeeded:
+
+```bash
+cat /tmp/oidc-login.txt | tail -1
+```
+
+Expected: `✓ Authenticated successfully`
+
+> **Troubleshooting:** If the last line shows `error` or the output only shows the auth URL with no success:
+> - Check `grep 'data-page-id' /tmp/kc-login.html` — if it shows `login-error`, the redirect URIs need fixing (see Step 5b)
+> - Check `echo "$FORM_ACTION"` — if it says `NOT_FOUND`, the Keycloak login page may use a JS-rendered theme; use the ROPC JWT from Step 2 as an alternative
+> - Check `echo "$REDIRECT"` — it should contain `http://127.0.0.1:<PORT>/callback?...`; if empty, the credentials may be wrong
 
 ### Step 8 — See the Difference: `whoami`
 
-Now compare your authenticated identity with the unauthenticated one:
+Now compare your authenticated identity with the unauthenticated one you saw at the start of this module:
 
 ```bash
-echo "=== Authenticated (OIDC gateway) ==="
 openshell whoami --gateway-insecure
 ```
 
@@ -446,12 +450,31 @@ Current User
 
 The `Subject` is a UUID assigned by Keycloak when you created the user — it will be different on every cluster.
 
-Switch back to the mTLS gateway to see the unauthenticated identity:
+Compare this with the unauthenticated identity from the beginning of the module:
+
+| Property | Unauthenticated (before login) | Authenticated (after login) |
+|----------|-------------------------------|----------------------------|
+| **Subject** | `unauthenticated-local-dev` | `<keycloak-uuid>` (unique per user) |
+| **Name** | `Unauthenticated Local Dev` | `demo-engineer` |
+| **Provider** | `local_dev` | `oidc` |
+| **Roles** | `openshell-user, openshell-admin` | *(empty — no roles granted yet)* |
+| **Scopes** | `openshell:all` | *(empty)* |
+
+> **This is zero-trust least privilege in action.** The unauthenticated user gets *everything* by default (dangerous). The authenticated user gets *nothing* until roles are explicitly granted. Try running `openshell sandbox list --gateway-insecure` with the OIDC gateway — it returns `role 'openshell-user' required`. The Gateway knows who you are, but knowing your name doesn't grant you access.
+
+Now log out and switch back to the mTLS gateway for the remaining steps (they need admin access):
 
 ```bash
+openshell gateway logout --gateway-insecure
+openshell gateway remove ztm-demo-oidc
 openshell gateway select openshell
-echo ""
-echo "=== Unauthenticated (mTLS gateway) ==="
+```
+
+> **Why remove the OIDC gateway?** The OIDC token persists in the CLI's global state. If you leave the OIDC gateway registered and just switch to the mTLS gateway, the stored token may still be sent. Removing the OIDC gateway and logging out ensures a clean return to the unauthenticated mTLS connection.
+
+Verify you're back to the unauthenticated identity:
+
+```bash
 openshell whoami
 ```
 
@@ -465,24 +488,6 @@ Current User
   Provider: local_dev
   Roles: openshell-user, openshell-admin
   Scopes: openshell:all
-```
-
-Side by side:
-
-| Property | Unauthenticated | Authenticated |
-|----------|----------------|---------------|
-| **Subject** | `unauthenticated-local-dev` | `<keycloak-uuid>` (unique per user) |
-| **Name** | `Unauthenticated Local Dev` | `demo-engineer` |
-| **Provider** | `local_dev` | `oidc` |
-| **Roles** | `openshell-user, openshell-admin` | *(empty — no roles granted yet)* |
-| **Scopes** | `openshell:all` | *(empty)* |
-
-> **This is zero-trust least privilege in action.** The unauthenticated user gets *everything* by default (dangerous). The authenticated user gets *nothing* until roles are explicitly granted. Try running `openshell sandbox list --gateway-insecure` with the OIDC gateway — it returns `role 'openshell-user' required`. The Gateway knows who you are, but knowing your name doesn't grant you access.
-
-Switch back to the mTLS gateway for the remaining steps (they need admin access):
-
-```bash
-openshell gateway select openshell
 ```
 
 ### Enforcing Authentication (Production)
@@ -646,7 +651,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: openshell
   spiffeIDTemplate: >-
-    spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell
+    spiffe://${CLUSTER_DOMAIN}/ns/openshell-system/sa/openshell
 ```
 
 > **Reading the registration:**
@@ -670,16 +675,16 @@ oc exec -n zero-trust-workload-identity-manager spire-server-0 -c spire-server \
 Expected (you'll see entries for three service accounts):
 
 ```
-SPIFFE ID  : spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell-ztm-demo
+SPIFFE ID  : spiffe://${CLUSTER_DOMAIN}/ns/openshell-system/sa/openshell-ztm-demo
 Selector   : k8s:pod-uid:<gateway-pod-uid>
 
-SPIFFE ID  : spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell-ztm-demo-sandbox
+SPIFFE ID  : spiffe://${CLUSTER_DOMAIN}/ns/openshell-system/sa/openshell-ztm-demo-sandbox
 Selector   : k8s:pod-uid:<supervisor-pod-uid>
 
-SPIFFE ID  : spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell-ztm-demo-sandbox
+SPIFFE ID  : spiffe://${CLUSTER_DOMAIN}/ns/openshell-system/sa/openshell-ztm-demo-sandbox
 Selector   : k8s:pod-uid:<sandbox-pod-uid>
 
-SPIFFE ID  : spiffe://<CLUSTER_DOMAIN>/ns/openshell-system/sa/openshell-setup
+SPIFFE ID  : spiffe://${CLUSTER_DOMAIN}/ns/openshell-system/sa/openshell-setup
 Selector   : k8s:pod-uid:<setup-job-pod-uid>
 ```
 
