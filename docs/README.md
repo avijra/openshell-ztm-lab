@@ -1,8 +1,8 @@
 # OpenShell on Zero Trust — Demo Lab
 
-> **Securing AI Agents in Production with Zero Trust on ROSA**
+> **Securing AI Agents in Production with Zero Trust on AWS**
 
-Welcome to the hands-on demo lab for **NVIDIA OpenShell** running on Red Hat's **Zero Trust Validated Pattern (ZTVP)** on **ROSA** (Red Hat OpenShift Service on AWS).
+Welcome to the hands-on demo lab for **NVIDIA OpenShell** running on Red Hat's **Zero Trust Validated Pattern (ZTVP)** on **OpenShift on AWS**.
 
 ## The Problem: AI Agents Are Powerful — and Dangerous
 
@@ -45,7 +45,7 @@ In this lab you will:
 
 | Technology | What it is | Role in this lab |
 |------------|-----------|-----------------|
-| **ROSA** | Red Hat OpenShift Service on AWS — a managed Kubernetes platform | The cluster running everything |
+| **OpenShift on AWS** | Red Hat OpenShift on AWS — a managed Kubernetes platform | The cluster running everything |
 | **ZTVP** | Zero Trust Validated Pattern — a curated set of security tools deployed together | Provides Vault, ESO, Keycloak, SPIFFE, and ACS |
 | **OpenShell** | NVIDIA's framework for running AI agents in secure sandboxes | Enforces network, filesystem, and credential policies |
 | **[Pi](https://pi.dev/)** | An agentic coding assistant by Earendil Inc. | The AI agent writing and running code inside the sandbox |

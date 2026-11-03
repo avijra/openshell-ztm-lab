@@ -11,7 +11,7 @@ The OpenShell Gateway is exposed via an **OpenShift Route** — a URL that termi
 ## Step 1 — SSH to the Bastion
 
 ```bash
-ssh rosa@<BASTION_HOST>
+ssh lab-user@<BASTION_HOST>
 ```
 
 ## Step 2 — Check the OpenShell CLI
@@ -47,7 +47,7 @@ echo "Gateway: $OPENSHELL_GATEWAY_ENDPOINT"
 Expected output:
 
 ```
-Gateway: https://openshell-ztm-demo-openshell-system.apps.rosa.rosa-wjw4q.8pwg.p3.openshiftapps.com
+Gateway: https://openshell-ztm-demo-openshell-system.<CLUSTER_DOMAIN>
 ```
 
 > **Breaking this down:**

@@ -32,7 +32,7 @@ graph TD
 The chart repository must be registered once per cluster. SSH to the bastion and run:
 
 ```bash
-ssh rosa@<BASTION_HOST>
+ssh lab-user@<BASTION_HOST>
 ```
 
 Apply the `HelmChartRepository` custom resource:

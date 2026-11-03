@@ -9,17 +9,17 @@ Your instructor will give you four pieces of information. Enter them in the **co
 | Item | Example | What it is |
 |------|---------|-----------|
 | **Bastion host** | `bastion.wjw4q.sandbox3490.opentlc.com` | A jump server with network access to the cluster. You'll SSH here to run all commands. |
-| **SSH password** | provided verbally | The password for the `rosa` user on the bastion |
-| **ROSA cluster domain** | `apps.rosa.rosa-wjw4q.8pwg.p3.openshiftapps.com` | The domain suffix for all cluster routes (URLs). Every service is at `https://something.<this-domain>` |
+| **SSH password** | provided verbally | The password for the `lab-user` user on the bastion |
+| **Cluster domain** | `apps.ocp.<GUID>.sandbox<ID>.opentlc.com` | The domain suffix for all cluster routes (URLs). Every service is at `https://something.<this-domain>` |
 | **MAAS API key** | `sk-...` | Your personal key for the Red Hat MAAS (Model-as-a-Service) LLM API. Pi uses this to generate code via gpt-oss-120b. |
 
 > **What is a bastion host?** A bastion (or jump box) is a hardened server that sits between you and the internal network. You SSH into it, and from there you can access cluster resources. It already has `oc` (the OpenShift CLI) and `openshell` (the OpenShell CLI) installed and authenticated. You never need to install anything on your laptop.
 
-## ROSA Cluster with ZTVP
+## OpenShift Cluster with ZTVP
 
 The cluster is pre-deployed with:
 
-- **ROSA** (Red Hat OpenShift on AWS) — OCP 4.22.x, running on 4 worker nodes in AWS `us-east-2`
+- **OpenShift on AWS** — OCP 4.x, running on worker nodes in AWS
 - **Zero Trust Validated Pattern** — fully deployed, all components Healthy
 
 The ZTVP provides these components, which are **already running**. You do not need to deploy or configure any of them:
@@ -46,7 +46,7 @@ Before proceeding, scroll to the **top of this page** and fill in the form with:
 
 1. **Bastion Host** — the SSH hostname
 2. **SSH Password** — the SSH password
-3. **Cluster Domain** — the `apps.rosa.rosa-*` domain
+3. **Cluster Domain** — the `apps.ocp.*` domain
 4. **MAAS API Key** — your personal key (starts with `sk-`)
 
 Click **Save**. All commands in this lab will auto-populate with your values.
@@ -56,7 +56,7 @@ Click **Save**. All commands in this lab will auto-populate with your values.
 Open a terminal and confirm SSH access:
 
 ```bash
-ssh rosa@<BASTION_HOST>
+ssh lab-user@<BASTION_HOST>
 ```
 
 When prompted for the password, enter: `<SSH_PASSWORD>`
@@ -64,10 +64,10 @@ When prompted for the password, enter: `<SSH_PASSWORD>`
 You should see a shell prompt like:
 
 ```
-[rosa@bastion ~]$
+[lab-user@bastion ~]$
 ```
 
-> **What does this mean?** You're now logged into the bastion server as the `rosa` user. This machine has direct network access to the OpenShift cluster, so all `oc` and `openshell` commands will work from here.
+> **What does this mean?** You're now logged into the bastion server as the `lab-user` user. This machine has direct network access to the OpenShift cluster, so all `oc` and `openshell` commands will work from here.
 
 > **Troubleshooting:** If you cannot connect, check with your instructor that (1) the bastion is running, (2) your network allows outbound SSH on port 22, and (3) you have the correct hostname.
 
@@ -90,10 +90,10 @@ cluster-admin
 If you see a login error, ask your instructor for the **cluster-admin password** (this is different from the SSH password) and run:
 
 ```bash
-oc login https://api.rosa-wjw4q.8pwg.p3.openshiftapps.com:443 --username cluster-admin --password <CLUSTER_ADMIN_PASSWORD>
+oc login https://api.<CLUSTER_DOMAIN_BASE>:6443 --username cluster-admin --password <CLUSTER_ADMIN_PASSWORD>
 ```
 
-> **Note:** The cluster-admin password is set separately via `rosa create admin` and is **not** the same as the SSH password. The bastion is pre-configured with a valid `oc` session, so this step is rarely needed.
+> **Note:** The cluster-admin password is separate from the SSH password. The bastion is pre-configured with a valid `oc` session, so this step is rarely needed.
 
 ## Ready?
 

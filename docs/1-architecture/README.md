@@ -4,7 +4,7 @@ Before we start deploying, let's understand how all the pieces fit together. Thi
 
 ## The Big Picture
 
-The demo runs on a **ROSA cluster** (Red Hat OpenShift on AWS) with two layers:
+The demo runs on an **OpenShift cluster on AWS** with two layers:
 
 1. **Foundation layer: ZTVP** — The Zero Trust Validated Pattern provides five security services (Vault, ESO, Keycloak, SPIFFE/SPIRE, ACS) that are already deployed and running. Think of ZTVP as the "security platform" that any application can plug into.
 
@@ -12,7 +12,7 @@ The demo runs on a **ROSA cluster** (Red Hat OpenShift on AWS) with two layers:
 
 ```mermaid
 graph TB
-    subgraph ROSA["ROSA Cluster (AWS)"]
+        subgraph OCP["OpenShift Cluster (AWS)"]
         subgraph ZTVP["Zero Trust Validated Pattern"]
             Vault["🔐 Vault"]
             ESO["🔄 External Secrets"]
