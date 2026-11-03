@@ -173,7 +173,7 @@ graph TD
 | **Supervisor** | Sidecar process | Runs outside the sandbox, enforces the network boundary, monitors the agent | `openshell-system` |
 | **Sandbox** | Isolated container | Where Pi runs — the agent's entire world | `openshell-system` |
 | **Vault** | Secret management (HashiCorp) | Stores and encrypts the MAAS API key | `vault` |
-| **ESO** | External Secrets Operator | Syncs secrets from Vault → Kubernetes Secrets automatically | `external-secrets-operator` |
+| **ESO** | External Secrets Operator | Syncs secrets from Vault → Kubernetes Secrets automatically | `external-secrets` |
 | **SPIFFE/SPIRE** | Workload identity framework | Issues cryptographic certificates (SVIDs) to prove workload identity | `zero-trust-workload-identity-manager` |
 | **ACS** | Advanced Cluster Security (StackRox) | Scans container images for CVEs, enforces security policies | `stackrox` |
 | **Keycloak** | Identity provider (SSO/OIDC) | Authenticates users, issues JWT tokens | `keycloak-system` |

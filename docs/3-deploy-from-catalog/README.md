@@ -126,7 +126,9 @@ oc create namespace openshell-system
 >   -n openshell-system --create-namespace \
 >   --set maas.apiKey=<MAAS_API_KEY> \
 >   --set vault.enabled=true \
->   --set global.clusterDomain=<CLUSTER_DOMAIN>
+>   --set global.clusterDomain=<CLUSTER_DOMAIN> \
+>   --set keycloak.adminSecretName=keycloak-admin-user \
+>   --set keycloak.adminUsername=admin
 > ```
 > The `--create-namespace` flag creates the namespace automatically, so you can skip Step 2 if using the CLI.
 

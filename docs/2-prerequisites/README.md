@@ -27,7 +27,7 @@ The ZTVP provides these components, which are **already running**. You do not ne
 | Component | What it does | Status | How to verify |
 |-----------|-------------|--------|--------------|
 | **HashiCorp Vault** | Stores secrets (API keys, certificates) in encrypted storage with access control | ✅ Deployed | `https://vault-vault.<CLUSTER_DOMAIN>` |
-| **External Secrets Operator (ESO)** | Automatically syncs secrets from Vault into Kubernetes Secrets | ✅ Deployed | Namespace `external-secrets-operator` |
+| **External Secrets Operator (ESO)** | Automatically syncs secrets from Vault into Kubernetes Secrets | ✅ Deployed | Namespace `external-secrets` |
 | **Keycloak** | Provides single sign-on (SSO) and OIDC authentication for users and services | ✅ Deployed | `https://keycloak.<CLUSTER_DOMAIN>` |
 | **SPIFFE/SPIRE** | Issues cryptographic workload identities — like passports for pods | ✅ Deployed | Namespace `zero-trust-workload-identity-manager` |
 | **ACS (StackRox)** | Scans container images for vulnerabilities and enforces security policies | ✅ Deployed | `https://central-stackrox.<CLUSTER_DOMAIN>` |
@@ -82,10 +82,10 @@ oc whoami
 Expected output:
 
 ```
-cluster-admin
+system:admin
 ```
 
-> **What is `oc`?** It's the OpenShift command-line tool — like `kubectl` for Kubernetes, but with extra OpenShift features. `cluster-admin` means you have full administrative access to the cluster.
+> **What is `oc`?** It's the OpenShift command-line tool — like `kubectl` for Kubernetes, but with extra OpenShift features. `system:admin` means you have full administrative access to the cluster via the kubeconfig. On some clusters you may see `cluster-admin` instead — both indicate full admin privileges.
 
 If you see a login error, ask your instructor for the **cluster-admin password** (this is different from the SSH password) and run:
 
@@ -94,6 +94,38 @@ oc login https://api.<CLUSTER_DOMAIN_BASE>:6443 --username cluster-admin --passw
 ```
 
 > **Note:** The cluster-admin password is separate from the SSH password. The bastion is pre-configured with a valid `oc` session, so this step is rarely needed.
+
+## Verify: Helm CLI
+
+The lab uses Helm to install the OpenShell chart. Check if Helm is installed:
+
+```bash
+helm version --short
+```
+
+If `helm` is not found, install it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+## Verify: OpenShell CLI
+
+Check if the OpenShell CLI is installed:
+
+```bash
+openshell --version
+```
+
+Expected output: `openshell 0.1.6` (or later).
+
+If `openshell` is not found, install it:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+```
+
+> **Note:** The install script places the binary in `~/.local/bin`. You may need to add it to your PATH: `export PATH=$HOME/.local/bin:$PATH`
 
 ## Ready?
 
