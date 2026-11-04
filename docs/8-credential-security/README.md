@@ -168,6 +168,175 @@ The real API key passes through three zones. Only the Gateway zone ever holds th
 
 > **Notice:** The sandbox row is missing because the sandbox *never* sees the real key. Not at install time, not at runtime, not during API calls. This is the fundamental innovation.
 
+## How It Works: The Resolution Chain
+
+This section explains how the Helm chart configures the credential resolution pipeline — from Vault all the way to the token swap at the network boundary.
+
+### Step A: Real Key → Vault (Pre-install Hook)
+
+When you run `helm install --set maas.apiKey=sk-...`, a **pre-install hook** Job writes the key into Vault:
+
+```
+helm install --set maas.apiKey=sk-...
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  vault-seed-maas Job (pre-install hook)  │
+│                                          │
+│  1. Read sk-... from ephemeral K8s       │
+│     Secret (deleted after job succeeds)  │
+│  2. Authenticate to Vault via K8s        │
+│     ServiceAccount token:                │
+│     POST /v1/auth/hub/login              │
+│  3. Write key to Vault:                  │
+│     POST /v1/secret/data/hub/infra/      │
+│     openshell/maas                       │
+│     { "data": { "api_key": "sk-..." } }  │
+└──────────────────────────────────────────┘
+```
+
+After this job completes, the real key exists only in Vault. The ephemeral K8s Secret is deleted by Helm's `hook-delete-policy: hook-succeeded`.
+
+### Step B: Vault → K8s Secret (External Secrets Operator)
+
+An `ExternalSecret` CR tells ESO to sync the key from Vault into a K8s Secret:
+
+```
+┌──────────────────────────────────────────┐
+│  ExternalSecret: maas-api-key-es         │
+│                                          │
+│  secretStoreRef: vault-backend           │
+│    (ZTVP's ClusterSecretStore)           │
+│  remoteRef:                              │
+│    key: hub/infra/openshell/maas         │
+│    property: api_key                     │
+│  target:                                 │
+│    name: maas-api-key  ──────────────►   │
+│                          K8s Secret      │
+│  refreshInterval: 1h                     │
+│    (auto-syncs key rotation from Vault)  │
+└──────────────────────────────────────────┘
+```
+
+### Step C: Provider Profile — The Resolution Rules
+
+A **provider profile** is imported into the Gateway. This YAML defines *how* the Boundary should resolve credentials for this provider:
+
+```yaml
+# maas-profile.yaml
+id: maas
+credentials:
+  - name: api_key
+    env_vars: [MAAS_API_KEY]       # sandbox env var name
+    auth_style: bearer              # look in Authorization: Bearer ...
+    header_name: authorization      # which HTTP header to inspect
+endpoints:
+  - host: maas-rhdp.apps.maas.redhatworkshops.io  # endpoint binding
+    port: 443
+binaries: [/usr/bin/curl, /usr/bin/node]           # allowed executables
+```
+
+This tells the Gateway: *"When you see a resolver token for `MAAS_API_KEY` in an `Authorization: Bearer` header, only resolve it if the request is destined for `maas-rhdp.apps.maas.redhatworkshops.io:443` and was initiated by `curl` or `node`."*
+
+### Step D: Provider Instance — Register the Real Key
+
+The post-install setup job reads the K8s Secret and registers it with the Gateway:
+
+```bash
+openshell provider create \
+  --name maas \
+  --type maas \
+  --credential "MAAS_API_KEY=sk-..."
+```
+
+The Gateway stores this mapping in memory: credential name `MAAS_API_KEY` → real value `sk-...`.
+
+### Step E: Sandbox Creation — Token Injection
+
+When the sandbox is created with `--provider maas`, the Gateway:
+
+1. **Generates** a unique resolver token: `openshell:resolve:env:v<version_id>_MAAS_API_KEY`
+2. **Injects** it into the sandbox container as the environment variable `$MAAS_API_KEY`
+3. **Records** the mapping: this token → credential `MAAS_API_KEY` → provider `maas`
+
+```bash
+openshell sandbox create \
+  --name pi-agent-demo \
+  --from ghcr.io/avijra/pi-sandbox:v1.0 \
+  --provider maas   # ← this flag triggers resolver token generation
+```
+
+The `--provider maas` flag is the critical link. Without it, no resolver token would be injected.
+
+### Step F: Runtime Resolution (Every API Call)
+
+```
+Sandbox Container                Supervisor (Boundary)               MAAS API
+      │                                  │                               │
+      │ curl -H "Authorization:          │                               │
+      │   Bearer openshell:resolve:      │                               │
+      │   env:v1189..._MAAS_API_KEY"     │                               │
+      │   https://maas-rhdp.../v1        │                               │
+      │ ────────────────────────────►    │                               │
+      │   (iptables redirects all        │                               │
+      │    outbound traffic through      │                               │
+      │    the Supervisor's proxy)       │                               │
+      │                                  │                               │
+      │                          ┌───────┴────────┐                      │
+      │                          │ 1. Detect token │                     │
+      │                          │ prefix:         │                     │
+      │                          │ "openshell:     │                     │
+      │                          │  resolve:"  ✅   │                     │
+      │                          ├────────────────-┤                     │
+      │                          │ 2. Extract name:│                     │
+      │                          │ MAAS_API_KEY    │                     │
+      │                          ├─────────────────┤                     │
+      │                          │ 3. Endpoint     │                     │
+      │                          │ binding check:  │                     │
+      │                          │ dest matches    │                     │
+      │                          │ maas-rhdp?  ✅   │                     │
+      │                          ├─────────────────┤                     │
+      │                          │ 4. Swap token   │                     │
+      │                          │ with real key:  │                     │
+      │                          │ sk-HVLl...      │                     │
+      │                          └───────┬─────────┘                     │
+      │                                  │                               │
+      │                                  │ Authorization: Bearer sk-...  │
+      │                                  │ ─────────────────────────►    │
+      │                                  │                               │
+      │                                  │◄──── 200 OK {models...} ─────│
+      │◄──── response (key never logged) │                               │
+```
+
+The Supervisor and sandbox run as **two containers in the same pod**. The Supervisor sets up `iptables` rules to redirect all outbound TCP from the sandbox through its proxy. The sandbox cannot bypass this — there is no other network path out.
+
+### Rejection Scenarios
+
+| Scenario | What Happens |
+|----------|-------------|
+| Token → `maas-rhdp.apps.maas...` | ✅ Resolved — destination matches provider endpoint |
+| Token → `api.openai.com` | ❌ **credential_endpoint_mismatch** — wrong host for this token |
+| Token → `attacker.com` | ❌ **Network policy deny** (not in allowlist) + endpoint mismatch |
+| Token used outside the cluster | ❌ Useless — only this Gateway's Boundary can resolve it |
+| Token versioned `v1189...` after key rotation | ❌ Old version invalidated when provider is re-created |
+
+### The Token Format
+
+```
+openshell:resolve:env:v11898531587446933072_MAAS_API_KEY
+│                 │   │                     │
+│                 │   │                     └─ credential name (maps to provider profile)
+│                 │   └─ version ID (tied to this specific provider registration)
+│                 └─ source type (environment variable)
+└─ prefix (tells Boundary "this is a resolver token, not a real key")
+```
+
+The token is designed to be:
+- **Detectable** — the `openshell:resolve:` prefix lets the Boundary instantly distinguish it from a real API key
+- **Versioned** — rotating the key creates a new version, invalidating old tokens
+- **Bound** — only resolvable by this specific Gateway's Boundary, for the specific endpoint declared in the provider profile
+- **Useless externally** — MAAS expects a real `sk-` key; sending a resolver token gets you `401 Unauthorized`
+
 ## Key Takeaways
 
 | Property | Traditional Approach | OpenShell Approach |
