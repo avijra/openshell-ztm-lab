@@ -170,53 +170,65 @@ The real API key passes through three zones. Only the Gateway zone ever holds th
 
 ## How It Works: The Resolution Chain
 
-This section explains how the Helm chart configures the credential resolution pipeline — from Vault all the way to the token swap at the network boundary.
+This section explains how the Helm chart configures the credential resolution pipeline — from install to the token swap at the network boundary.
 
-### Step A: Real Key → Vault (Pre-install Hook)
+### Step A: Install — Key Passes Through a Staging Secret
 
-When you run `helm install --set maas.apiKey=sk-...`, a **pre-install hook** Job writes the key into Vault:
+When you run `helm install --set maas.apiKey=sk-...`, Helm creates a K8s Secret to stage the key:
 
 ```
 helm install --set maas.apiKey=sk-...
        │
        ▼
 ┌──────────────────────────────────────────┐
-│  vault-seed-maas Job (pre-install hook)  │
+│  K8s Secret: maas-api-key                │
+│  (created by maas-secret.yaml)           │
 │                                          │
-│  1. Read sk-... from ephemeral K8s       │
-│     Secret (deleted after job succeeds)  │
-│  2. Authenticate to Vault via K8s        │
-│     ServiceAccount token:                │
-│     POST /v1/auth/hub/login              │
-│  3. Write key to Vault:                  │
-│     POST /v1/secret/data/hub/infra/      │
-│     openshell/maas                       │
-│     { "data": { "api_key": "sk-..." } }  │
+│  data:                                   │
+│    api_key: sk-HVLl...                   │
+│                                          │
+│  This is a staging secret — the setup    │
+│  job reads it and passes the key to the  │
+│  Gateway. The key's permanent home is    │
+│  Vault, managed by the Gateway's         │
+│  credential driver.                      │
 └──────────────────────────────────────────┘
 ```
 
-After this job completes, the real key exists only in Vault. The ephemeral K8s Secret is deleted by Helm's `hook-delete-policy: hook-succeeded`.
+### Step B: Setup Job → Gateway → Vault
 
-### Step B: Vault → K8s Secret (External Secrets Operator)
-
-An `ExternalSecret` CR tells ESO to sync the key from Vault into a K8s Secret:
+A post-install Job reads the staging secret and registers the provider with the Gateway. The Gateway's **Vault credential driver** then stores the key in Vault at an opaque, hashed path:
 
 ```
 ┌──────────────────────────────────────────┐
-│  ExternalSecret: maas-api-key-es         │
+│  pi-sandbox-setup Job (post-install)     │
 │                                          │
-│  secretStoreRef: vault-backend           │
-│    (ZTVP's ClusterSecretStore)           │
-│  remoteRef:                              │
-│    key: hub/infra/openshell/maas         │
-│    property: api_key                     │
-│  target:                                 │
-│    name: maas-api-key  ──────────────►   │
-│                          K8s Secret      │
-│  refreshInterval: 1h                     │
-│    (auto-syncs key rotation from Vault)  │
+│  1. Reads K8s Secret maas-api-key        │
+│     via env var MAAS_API_KEY             │
+│                                          │
+│  2. openshell provider create            │
+│     --name maas --type maas              │
+│     --credential "MAAS_API_KEY=sk-..."   │
+│     ──────────────────────────────────►  │
+│                                          │
+│  3. Gateway receives the key via gRPC    │
+│     and stores it through its active     │
+│     credential driver:                   │
+│                                          │
+│     Vault credential driver writes to:   │
+│     secret/openshell/provider-            │
+│       credentials/<sha1-hash>            │
+│                                          │
+│  The Gateway owns the Vault path.        │
+│  Hashed names mean even a Vault admin    │
+│  can't tell which entry is which         │
+│  without the Gateway.                    │
 └──────────────────────────────────────────┘
 ```
+
+> **Why hashed paths?** The Gateway uses SHA-1 hashes of the credential identity as Vault key names (e.g., `5545570f04581f16...`). This prevents information leakage — a Vault operator can see that credentials exist, but can't identify which provider or key each entry belongs to without Gateway access.
+
+> **No ESO bridge needed.** Earlier versions of this chart used a Vault seed job + External Secrets Operator to round-trip the key through Vault. Since the Gateway's Vault credential driver ([NVIDIA/OpenShell#1931](https://github.com/NVIDIA/OpenShell/issues/1931)) handles Vault storage directly, that bridge was removed in chart v1.4.0.
 
 ### Step C: Provider Profile — The Resolution Rules
 
@@ -238,18 +250,15 @@ binaries: [/usr/bin/curl, /usr/bin/node]           # allowed executables
 
 This tells the Gateway: *"When you see a resolver token for `MAAS_API_KEY` in an `Authorization: Bearer` header, only resolve it if the request is destined for `maas-rhdp.apps.maas.redhatworkshops.io:443` and was initiated by `curl` or `node`."*
 
-### Step D: Provider Instance — Register the Real Key
+### Step D: Provider Instance — What Happens Inside the Gateway
 
-The post-install setup job reads the K8s Secret and registers it with the Gateway:
+When the Gateway receives `openshell provider create --credential "MAAS_API_KEY=sk-..."`, three things happen:
 
-```bash
-openshell provider create \
-  --name maas \
-  --type maas \
-  --credential "MAAS_API_KEY=sk-..."
-```
+1. **Vault write** — the credential driver stores the real key in Vault at `secret/openshell/provider-credentials/<hash>`, encrypted at rest
+2. **Handle stored** — the Gateway's database keeps only an opaque handle (the hash), not the real key
+3. **Memory cache** — the real key is held in RAM for runtime resolution by the Boundary
 
-The Gateway stores this mapping in memory: credential name `MAAS_API_KEY` → real value `sk-...`.
+If the Gateway restarts, it resolves the handle from Vault to reload the key — the real key is never persisted in the Gateway's own database.
 
 ### Step E: Sandbox Creation — Token Injection
 

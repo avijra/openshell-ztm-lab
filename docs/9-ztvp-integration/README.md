@@ -46,7 +46,7 @@ graph TB
 
 > **What is Vault?** [HashiCorp Vault](https://www.vaultproject.io/) is a secret management system. It stores sensitive data (API keys, passwords, certificates) in encrypted storage with fine-grained access control. Instead of putting secrets in Kubernetes Secrets (which are base64-encoded, not encrypted), you put them in Vault where they're encrypted at rest, access-logged, and rotatable.
 
-The Helm chart's pre-install hook stores your MAAS API key in Vault automatically.
+The OpenShell Gateway's **Vault credential driver** stores the MAAS API key in Vault automatically when the provider is registered during install.
 
 ### Verify Vault Is Running
 
@@ -61,67 +61,54 @@ NAME      READY   STATUS    RESTARTS   AGE
 vault-0   1/1     Running   0          ...
 ```
 
-### Verify the Secret Chain Works
+### Verify the Gateway Stored Credentials in Vault
 
-You can verify the Vault → ESO → K8s Secret chain by checking the synced K8s Secret:
+The Gateway uses Vault as its credential backend. It stores provider credentials at opaque, hashed paths under `secret/openshell/provider-credentials/`:
 
 ```bash
-oc get secret maas-api-key -n openshell-system -o jsonpath='{.data.api_key}' | base64 -d | head -c 10
+VAULT_POD=$(oc get pod -n vault -l app.kubernetes.io/name=vault \
+  -o jsonpath='{.items[0].metadata.name}')
+
+oc exec -n vault $VAULT_POD -- vault kv list secret/openshell/provider-credentials/
+```
+
+Expected: a list of SHA-1 hashed entries:
+
+```
+Keys
+----
+5545570f04581f16f30b567f8152703f9c2bae8f
+a55f6c42779c956cd0f496bed3e3ad23b3deee65
+...
+```
+
+> **Why hashed names?** The Gateway hashes credential identities before using them as Vault key names. Even a Vault admin can't tell which entry holds which provider's key without Gateway access. This is a defense-in-depth measure — compromising Vault alone doesn't reveal which secrets belong to which service.
+
+You can confirm one of these entries holds the real MAAS key (first 10 characters only):
+
+```bash
+HASH=$(oc exec -n vault $VAULT_POD -- vault kv list -format=json \
+  secret/openshell/provider-credentials/ | python3 -c "import sys,json; print(json.load(sys.stdin)[0])")
+
+oc exec -n vault $VAULT_POD -- vault kv get -field=value \
+  secret/openshell/provider-credentials/$HASH | head -c 10
 echo "..."
 ```
 
-This should print the first 10 characters of your MAAS key, confirming the entire chain works: Vault has the key → ESO synced it → it's available as a K8s Secret.
+Expected: the first 10 characters of your MAAS key (e.g., `sk-HVLlF0_m...`).
 
-> **Why only 10 characters?** We don't want to expose the full key in the terminal. The first 10 chars are enough to confirm it's the right key.
+> **How did the key get there?** During `helm install`, the setup job ran `openshell provider create --credential "MAAS_API_KEY=sk-..."`. The Gateway received the key via its gRPC API and its Vault credential driver wrote it to `secret/openshell/provider-credentials/<hash>`. No manual Vault write, no External Secrets Operator, no bridge — the Gateway handles Vault storage directly.
 
-### The Vault Path
+### The Vault Integration Path
 
-| Path | Purpose |
-|------|---------|
-| `hub/infra/openshell/maas` | MAAS API key (`api_key` field) |
+| Component | Role |
+|-----------|------|
+| **Vault credential driver** | Gateway authenticates to Vault via K8s auth (`auth/hub`), stores and retrieves credentials |
+| **Vault KV v2** | Encrypted at-rest storage at `secret/openshell/provider-credentials/` |
+| **K8s auth** | The Gateway's ServiceAccount token proves its identity to Vault — no static credentials |
+| **openshell-admin role** | Vault role that grants read/write to the `secret/openshell/` path |
 
-> **What does `hub/` mean?** The ZTVP configures Vault with a Kubernetes auth method mounted at path `hub/`. This means pods in the cluster can authenticate to Vault using their ServiceAccount tokens — no static credentials needed. The Helm chart's setup job uses this auth method to write the key.
-
-## Pillar 2: External Secrets Operator — Secret Sync
-
-> **What is ESO?** The [External Secrets Operator](https://external-secrets.io/) watches `ExternalSecret` custom resources and syncs them from external sources (Vault, AWS Secrets Manager, etc.) into Kubernetes Secrets. It's the bridge between "secrets stored in Vault" and "secrets available to pods."
-
-### Verify the ExternalSecret
-
-```bash
-oc get externalsecrets -n openshell-system
-```
-
-Expected:
-
-```
-NAME              STORETYPE            STORE           REFRESH INTERVAL   STATUS         READY   LAST SYNC
-maas-api-key-es   ClusterSecretStore   vault-backend   1h                 SecretSynced   True    ...
-```
-
-> **Reading this output:**
-> - **NAME**: `maas-api-key-es` — the ExternalSecret resource created by the Helm chart
-> - **STORETYPE**: `ClusterSecretStore` — it uses a cluster-wide secret store (not namespace-scoped)
-> - **STORE**: `vault-backend` — the store is backed by Vault
-> - **REFRESH INTERVAL**: `1h` — ESO checks Vault for updates every hour
-> - **STATUS**: `SecretSynced` — the K8s Secret was successfully created/updated from Vault
-> - **READY**: `True` — everything is healthy
-
-### How ESO Syncs
-
-```mermaid
-graph LR
-    ES["ExternalSecret CR<br/>(declares what to sync)"]
-    ESO["ESO watches CR<br/>reads from Vault every 1h"]
-    V["🔐 Vault KV"]
-    KS["K8s Secret<br/>maas-api-key"]
-
-    ES --> ESO
-    V -->|"ESO reads"| ESO
-    ESO -->|"creates/updates"| KS
-```
-
-> **Why is this valuable?** If you rotate the API key in Vault, ESO will automatically sync the new value to the K8s Secret within 1 hour. The Gateway picks up the new secret, and Pi's next API call uses the new key — no redeployment needed.
+> **What about ESO?** The ZTVP deploys the External Secrets Operator for other applications that need Vault-to-K8s-Secret syncing. OpenShell does **not** use ESO — its Gateway talks to Vault directly via the credential driver. This is a cleaner architecture: one fewer component in the chain, and the Gateway owns the full credential lifecycle (storage, rotation, deletion).
 
 ## Pillar 3: SPIFFE/SPIRE — Workload Identity
 
